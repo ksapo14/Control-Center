@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "framer-motion";
-import { Pause, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Pause, Play, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
 
@@ -28,9 +28,11 @@ function parseTimePart(value: string, maximum: number) {
 export function PomodoroTimer() {
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_SECONDS);
   const [running, setRunning] = useState(false);
+  const [completed, setCompleted] = useState(false);
   const [minuteDraft, setMinuteDraft] = useState("25");
   const [secondDraft, setSecondDraft] = useState("00");
   const endTimeRef = useRef<number | null>(null);
+  const lastDurationRef = useRef(DEFAULT_SECONDS);
   const activeControlRef = useRef<HTMLButtonElement>(null);
   const reduceMotion = useReducedMotion();
   const rawBass = useMotionValue(0);
@@ -48,6 +50,15 @@ export function PomodoroTimer() {
 
   const minutes = Math.floor(remainingSeconds / 60);
   const seconds = remainingSeconds % 60;
+  const timerActive = running || completed;
+
+  const dismissCompletion = useCallback(() => {
+    const resetSeconds = lastDurationRef.current;
+    setCompleted(false);
+    setRemainingSeconds(resetSeconds);
+    setMinuteDraft(formatTimePart(Math.floor(resetSeconds / 60)));
+    setSecondDraft(formatTimePart(resetSeconds % 60));
+  }, []);
 
   useEffect(() => {
     if (!running || endTimeRef.current === null) return;
@@ -60,6 +71,7 @@ export function PomodoroTimer() {
         setMinuteDraft("00");
         setSecondDraft("00");
         endTimeRef.current = null;
+        setCompleted(true);
         setRunning(false);
       }
     };
@@ -70,12 +82,16 @@ export function PomodoroTimer() {
   }, [running]);
 
   useEffect(() => {
-    if (!running) return;
+    if (!timerActive) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => activeControlRef.current?.focus(), reduceMotion ? 0 : 500);
 
     const keepFocusOnTimer = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape" && completed) {
+        dismissCompletion();
+        return;
+      }
       if (event.key !== "Tab") return;
       event.preventDefault();
       activeControlRef.current?.focus();
@@ -87,7 +103,7 @@ export function PomodoroTimer() {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", keepFocusOnTimer);
     };
-  }, [reduceMotion, running]);
+  }, [completed, dismissCompletion, reduceMotion, timerActive]);
 
   useEffect(() => {
     if (!running || reduceMotion || !isTauriRuntime()) {
@@ -139,6 +155,8 @@ export function PomodoroTimer() {
     setSecondDraft(formatTimePart(nextSeconds));
     setRemainingSeconds(nextTotal);
     if (nextTotal <= 0) return;
+    lastDurationRef.current = nextTotal;
+    setCompleted(false);
     endTimeRef.current = Date.now() + nextTotal * 1000;
     setRunning(true);
   };
@@ -152,6 +170,7 @@ export function PomodoroTimer() {
     setMinuteDraft(formatTimePart(Math.floor(next / 60)));
     setSecondDraft(formatTimePart(next % 60));
     endTimeRef.current = null;
+    if (next === 0) setCompleted(true);
     setRunning(false);
   };
 
@@ -178,17 +197,19 @@ export function PomodoroTimer() {
 
   const timerPanel = (focused: boolean) => (
     <motion.section
-      role={focused ? "dialog" : undefined}
+      role={focused ? (completed ? "alertdialog" : "dialog") : undefined}
       aria-modal={focused ? true : undefined}
-      aria-label={focused ? "Active Pomodoro timer" : "Pomodoro timer"}
-      aria-hidden={!focused && running ? true : undefined}
+      aria-label={focused ? (completed ? "Pomodoro complete" : "Active Pomodoro timer") : "Pomodoro timer"}
+      aria-hidden={!focused && timerActive ? true : undefined}
       initial={focused || reduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }}
-      animate={{ opacity: !focused && running ? 0 : 1, y: 0, scale: 1 }}
+      animate={{ opacity: !focused && timerActive ? 0 : 1, y: 0, scale: 1 }}
       transition={{ duration: reduceMotion ? 0 : 0.9, ease: [0.22, 1, 0.36, 1], delay: focused ? 0 : 0.12 }}
       className={`widget-panel relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] border-t-white/[0.16] bg-graphite-800 shadow-panel ${
         focused
-          ? "pointer-events-auto max-h-[calc(100dvh-2rem)] min-h-[clamp(280px,54vh,360px)] w-[min(31rem,calc(100vw-2rem))] border-signal-400/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_90px_rgba(0,0,0,0.72)]"
-          : `h-full min-h-[220px] md:col-span-2 lg:col-span-3 ${running ? "pointer-events-none" : ""}`
+          ? `pointer-events-auto max-h-[calc(100dvh-2rem)] min-h-[clamp(280px,54vh,360px)] w-[min(31rem,calc(100vw-2rem))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_90px_rgba(0,0,0,0.72)] ${
+              completed ? "border-red-400/35" : "border-signal-400/20"
+            }`
+          : `h-full min-h-[220px] md:col-span-2 lg:col-span-3 ${timerActive ? "pointer-events-none" : ""}`
       }`}
     >
       <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
@@ -208,19 +229,19 @@ export function PomodoroTimer() {
             type="text"
             inputMode="numeric"
             maxLength={2}
-            value={running ? formatTimePart(minutes) : minuteDraft}
+            value={timerActive ? formatTimePart(minutes) : minuteDraft}
             onChange={(event) => setMinutes(event.target.value)}
             onFocus={(event) => event.currentTarget.select()}
             onBlur={normalizeDrafts}
-            readOnly={running}
-            tabIndex={running ? -1 : 0}
+            readOnly={timerActive}
+            tabIndex={timerActive ? -1 : 0}
             aria-label="Pomodoro minutes"
             className={`timer-input min-w-0 w-[2.05ch] border-0 bg-transparent p-0 text-center font-mono font-semibold leading-none tabular-nums tracking-[-0.08em] text-stone-100 outline-none selection:bg-signal-400/30 focus:text-signal-300 ${
               focused ? "text-[clamp(2.8rem,14vw,6.5rem)]" : "text-[3.05rem]"
             }`}
           />
           <span
-            className={`shrink-0 font-mono font-medium leading-none text-signal-300 ${
+            className={`shrink-0 font-mono font-medium leading-none ${completed ? "text-red-400" : "text-signal-300"} ${
               focused ? "text-[clamp(2.4rem,10vw,4.25rem)]" : "text-[2.5rem]"
             }`}
           >
@@ -230,12 +251,12 @@ export function PomodoroTimer() {
             type="text"
             inputMode="numeric"
             maxLength={2}
-            value={running ? formatTimePart(seconds) : secondDraft}
+            value={timerActive ? formatTimePart(seconds) : secondDraft}
             onChange={(event) => setSeconds(event.target.value)}
             onFocus={(event) => event.currentTarget.select()}
             onBlur={normalizeDrafts}
-            readOnly={running}
-            tabIndex={running ? -1 : 0}
+            readOnly={timerActive}
+            tabIndex={timerActive ? -1 : 0}
             aria-label="Pomodoro seconds"
             className={`timer-input min-w-0 w-[2.05ch] border-0 bg-transparent p-0 text-center font-mono font-semibold leading-none tabular-nums tracking-[-0.08em] text-stone-100 outline-none selection:bg-signal-400/30 focus:text-signal-300 ${
               focused ? "text-[clamp(2.8rem,14vw,6.5rem)]" : "text-[3.05rem]"
@@ -245,14 +266,20 @@ export function PomodoroTimer() {
 
         <TactileButton
           ref={focused ? activeControlRef : undefined}
-          onClick={running ? pause : play}
-          disabled={!running && remainingSeconds === 0}
-          selected={running}
-          aria-label={running ? "Pause Pomodoro timer" : "Play Pomodoro timer"}
-          title={running ? "Pause" : "Play"}
+          onClick={completed ? dismissCompletion : running ? pause : play}
+          disabled={!timerActive && remainingSeconds === 0}
+          selected={timerActive}
+          aria-label={completed ? "Dismiss completed Pomodoro and reset" : running ? "Pause Pomodoro timer" : "Play Pomodoro timer"}
+          title={completed ? "Reset" : running ? "Pause" : "Play"}
           className={`grid place-items-center rounded-full ${focused ? "size-14" : "size-11"}`}
         >
-          {running ? <Pause size={focused ? 22 : 18} strokeWidth={1.8} /> : <Play size={focused ? 22 : 18} strokeWidth={1.8} className="translate-x-px" />}
+          {completed ? (
+            <RotateCcw size={focused ? 22 : 18} strokeWidth={1.8} />
+          ) : running ? (
+            <Pause size={focused ? 22 : 18} strokeWidth={1.8} />
+          ) : (
+            <Play size={focused ? 22 : 18} strokeWidth={1.8} className="translate-x-px" />
+          )}
         </TactileButton>
       </div>
     </motion.section>
@@ -263,7 +290,7 @@ export function PomodoroTimer() {
       {timerPanel(false)}
 
       <AnimatePresence initial={false}>
-        {running && (
+        {timerActive && (
           <motion.div
             key="pomodoro-veil"
             aria-hidden="true"
@@ -273,13 +300,49 @@ export function PomodoroTimer() {
             exit={{ opacity: 0 }}
             transition={{ duration: reduceMotion ? 0.16 : 1.45, ease: [0.65, 0, 0.35, 1] }}
           >
-            <motion.div
-              className="absolute inset-0"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: reduceMotion ? 0.16 : 1.3, delay: reduceMotion ? 0 : 0.45, ease: "easeInOut" }}
-            >
+            <AnimatePresence initial={false} mode="sync">
+              {completed ? (
+                <motion.div
+                  key="pomodoro-complete-glow"
+                  className="absolute inset-0 overflow-hidden bg-[#100001]"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: reduceMotion ? 0.16 : 0.8, ease: "easeInOut" }}
+                >
+                  <motion.div
+                    className="absolute inset-[-12%] will-change-transform"
+                    style={{
+                      background:
+                        "radial-gradient(circle at 50% 48%, rgba(255, 82, 82, 0.9) 0%, rgba(237, 28, 36, 0.62) 25%, rgba(132, 4, 12, 0.4) 58%, rgba(20, 0, 2, 0.96) 100%)",
+                    }}
+                    animate={reduceMotion ? { opacity: 0.82 } : { opacity: [0.58, 1, 0.58], scale: [0.98, 1.055, 0.98] }}
+                    transition={{ duration: 2.8, repeat: reduceMotion ? 0 : Infinity, ease: "easeInOut" }}
+                  />
+                  <motion.div
+                    className="absolute left-1/2 top-1/2 size-[112vmax] -translate-x-1/2 -translate-y-1/2 rounded-full blur-[110px] mix-blend-screen will-change-transform"
+                    style={{
+                      background:
+                        "radial-gradient(circle, rgba(255, 64, 64, 0.58) 0%, rgba(255, 16, 30, 0.3) 38%, transparent 70%)",
+                    }}
+                    animate={reduceMotion ? { opacity: 0.7 } : { opacity: [0.4, 0.82, 0.4], scale: [0.86, 1.08, 0.86] }}
+                    transition={{ duration: 2.8, repeat: reduceMotion ? 0 : Infinity, ease: "easeInOut" }}
+                  />
+                  <motion.div
+                    className="absolute inset-0 shadow-[inset_0_0_180px_rgba(255,40,48,0.42)]"
+                    animate={reduceMotion ? { opacity: 0.7 } : { opacity: [0.42, 0.88, 0.42] }}
+                    transition={{ duration: 2.8, repeat: reduceMotion ? 0 : Infinity, ease: "easeInOut" }}
+                  />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="pomodoro-frequency-glow"
+                  className="absolute inset-0"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: reduceMotion ? 0.16 : 0.8, ease: "easeInOut" }}
+                >
               <motion.div
                 className="absolute -left-[24vmax] top-[18vh] size-[72vmax] rounded-full blur-[86px] mix-blend-screen will-change-transform"
                 style={{
@@ -334,13 +397,15 @@ export function PomodoroTimer() {
                 }
                 transition={{ duration: 19, repeat: Infinity, ease: "easeInOut" }}
               />
-            </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </motion.div>
         )}
       </AnimatePresence>
 
       <AnimatePresence initial={false}>
-        {running && (
+        {timerActive && (
           <motion.div
             key="pomodoro-focus-panel"
             className="pointer-events-none fixed inset-0 z-50 grid place-items-center p-4"
