@@ -3,3 +3,19 @@ dist/
 src-tauri/target/
 *.log
 .DS_Store
+
+# Local environment and secret files
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+*.p12
+*.pfx
+**/credentials*.json
+**/client_secret*.json
+**/*-token.bin
+**/google-calendar-client.json
+**/google-calendar-client.bin
+**/spotify-client.json

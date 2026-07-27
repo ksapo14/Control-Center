@@ -165,20 +165,27 @@ Quick Schedule creates events in the connected account's primary Google Calendar
 6. In Control Panel, open **Quick schedule**, choose **Import JSON**, and select the downloaded Desktop OAuth JSON file.
 7. Choose **Connect Google** and finish authorization in the browser within three minutes.
 
-The imported OAuth client file is copied into the local app configuration directory. Treat it as sensitive configuration: do not commit it, post it publicly, or send it to other people. Google may display an unverified-app warning while a privately developed OAuth app is in testing. Public distribution can require additional consent-screen configuration or verification. See Google's [Calendar authentication guidance](https://developers.google.com/workspace/calendar/api/auth).
+The imported OAuth client file is validated and copied into the local app configuration directory using Windows DPAPI encryption. The original downloaded JSON remains your responsibility: do not commit it, post it publicly, or send it to other people. Google may display an unverified-app warning while a privately developed OAuth app is in testing. Public distribution can require additional consent-screen configuration or verification. See Google's [Calendar authentication guidance](https://developers.google.com/workspace/calendar/api/auth).
 
 ## Local data and privacy
 
 The app does not include analytics or a remote telemetry service. It does intentionally access local system information and optional third-party services to provide its features.
 
 - Spotify and Google refresh tokens are encrypted with Windows Data Protection API (DPAPI), tying them to the current Windows user profile.
-- Spotify's Client ID and the imported Google Desktop OAuth client JSON are configuration files, not DPAPI-encrypted token files.
+- The imported Google Desktop OAuth client configuration is also DPAPI-encrypted. Existing plaintext app configuration from older versions is encrypted and removed the next time it is loaded.
+- Spotify's Client ID is stored as plaintext because OAuth client IDs are public identifiers; no Spotify client secret is accepted or required.
 - Disconnecting an integration removes its saved token; it may not revoke the application's access at the service. Revoke access from the relevant Google or Spotify account settings when needed.
 - OAuth sign-in temporarily opens a listener on a random `127.0.0.1` port. A firewall or security product may ask for permission. The listener times out after three minutes.
 - The Pomodoro visualizer captures the current Windows output stream through WASAPI loopback only while the timer is active. Audio is analyzed in memory into bass, midrange, and treble energy; the implementation does not save or upload the audio.
 - Process titles, hardware telemetry, battery state, volume, and brightness are read locally for display.
 
 Tauri stores integration files in its application configuration directory, normally under the current Windows user's roaming AppData directory using the `com.local.controlpanel` identifier.
+
+### Secrets and environment variables
+
+The repository does not require or contain API secrets. Local `.env` variants, private keys, downloaded credential JSON files, and integration token files are ignored by Git as a defense against accidental commits.
+
+Do not put secrets in variables prefixed with `VITE_`: Vite replaces those values during compilation and exposes them in the frontend bundle. Future confidential values should be read only by the Rust backend from the process environment or an encrypted operating-system credential store, and should never be returned through a Tauri command.
 
 ## Warnings and limitations
 

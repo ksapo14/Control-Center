@@ -16,7 +16,8 @@ use tauri::Manager;
 use tauri_plugin_shell::ShellExt;
 use url::Url;
 
-const CREDENTIALS_FILE: &str = "google-calendar-client.json";
+const CREDENTIALS_FILE: &str = "google-calendar-client.bin";
+const LEGACY_CREDENTIALS_FILE: &str = "google-calendar-client.json";
 const TOKEN_FILE: &str = "google-calendar-token.bin";
 const CALENDAR_SCOPE: &str = "https://www.googleapis.com/auth/calendar.events";
 
@@ -92,6 +93,10 @@ fn credentials_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_config_dir(app)?.join(CREDENTIALS_FILE))
 }
 
+fn legacy_credentials_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_config_dir(app)?.join(LEGACY_CREDENTIALS_FILE))
+}
+
 fn token_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_config_dir(app)?.join(TOKEN_FILE))
 }
@@ -112,13 +117,6 @@ fn parse_credentials(contents: &str) -> Result<GoogleClientCredentials, String> 
     }
 
     Ok(credentials)
-}
-
-fn load_credentials(app: &tauri::AppHandle) -> Result<GoogleClientCredentials, String> {
-    let contents = fs::read_to_string(credentials_path(app)?).map_err(|_| {
-        "Google Calendar is not configured yet. Import the Desktop OAuth JSON first".to_string()
-    })?;
-    parse_credentials(&contents)
 }
 
 #[cfg(target_os = "windows")]
@@ -143,7 +141,7 @@ fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
             CRYPTPROTECT_UI_FORBIDDEN,
             &mut output,
         )
-        .map_err(|error| format!("Windows could not protect the Calendar token: {error}"))?;
+        .map_err(|error| format!("Windows could not protect the Calendar data: {error}"))?;
         let encrypted = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
         let _ = LocalFree(Some(HLOCAL(output.pbData.cast())));
         Ok(encrypted)
@@ -174,7 +172,7 @@ fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
             CRYPTPROTECT_UI_FORBIDDEN,
             &mut output,
         )
-        .map_err(|error| format!("Windows could not unlock the Calendar token: {error}"))?;
+        .map_err(|error| format!("Windows could not unlock the Calendar data: {error}"))?;
         let decrypted = std::slice::from_raw_parts(output.pbData, output.cbData as usize).to_vec();
         let _ = LocalFree(Some(HLOCAL(output.pbData.cast())));
         Ok(decrypted)
@@ -189,6 +187,50 @@ fn protect_bytes(_data: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(not(target_os = "windows"))]
 fn unprotect_bytes(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("Secure Google token storage is currently configured for Windows".into())
+}
+
+fn save_credentials(
+    app: &tauri::AppHandle,
+    credentials: GoogleClientCredentials,
+) -> Result<(), String> {
+    let serialized = serde_json::to_vec(&GoogleCredentialFile {
+        installed: Some(credentials),
+    })
+    .map_err(|error| format!("The OAuth configuration could not be prepared: {error}"))?;
+    let encrypted = protect_bytes(&serialized)?;
+    fs::write(credentials_path(app)?, encrypted)
+        .map_err(|error| format!("The OAuth configuration could not be saved: {error}"))
+}
+
+fn remove_legacy_credentials(app: &tauri::AppHandle) -> Result<(), String> {
+    let path = legacy_credentials_path(app)?;
+    if path.exists() {
+        fs::remove_file(path).map_err(|error| {
+            format!("The unencrypted OAuth configuration could not be removed: {error}")
+        })?;
+    }
+    Ok(())
+}
+
+fn load_credentials(app: &tauri::AppHandle) -> Result<GoogleClientCredentials, String> {
+    let encrypted_path = credentials_path(app)?;
+    if encrypted_path.is_file() {
+        let encrypted = fs::read(encrypted_path)
+            .map_err(|error| format!("The OAuth configuration could not be read: {error}"))?;
+        let decrypted = unprotect_bytes(&encrypted)?;
+        let contents = String::from_utf8(decrypted)
+            .map_err(|_| "The saved OAuth configuration is invalid".to_string())?;
+        return parse_credentials(&contents);
+    }
+
+    let legacy_path = legacy_credentials_path(app)?;
+    let contents = fs::read_to_string(&legacy_path).map_err(|_| {
+        "Google Calendar is not configured yet. Import the Desktop OAuth JSON first".to_string()
+    })?;
+    let credentials = parse_credentials(&contents)?;
+    save_credentials(app, credentials.clone())?;
+    remove_legacy_credentials(app)?;
+    Ok(credentials)
 }
 
 fn save_tokens(app: &tauri::AppHandle, tokens: &StoredTokens) -> Result<(), String> {
@@ -530,7 +572,7 @@ fn create_event_blocking(
 pub(crate) fn get_google_calendar_status(
     app: tauri::AppHandle,
 ) -> Result<GoogleCalendarStatus, String> {
-    let configured = credentials_path(&app)?.is_file();
+    let configured = load_credentials(&app).is_ok();
     let connected = configured && load_tokens(&app).is_ok();
     Ok(GoogleCalendarStatus {
         configured,
@@ -550,12 +592,8 @@ pub(crate) fn import_google_calendar_credentials(
     let contents = fs::read_to_string(source)
         .map_err(|error| format!("The OAuth JSON file could not be read: {error}"))?;
     let credentials = parse_credentials(&contents)?;
-    let normalized = serde_json::to_string_pretty(&GoogleCredentialFile {
-        installed: Some(credentials),
-    })
-    .map_err(|error| format!("The OAuth configuration could not be prepared: {error}"))?;
-    fs::write(credentials_path(&app)?, normalized)
-        .map_err(|error| format!("The OAuth configuration could not be saved: {error}"))?;
+    save_credentials(&app, credentials)?;
+    remove_legacy_credentials(&app)?;
     remove_tokens(&app)?;
     Ok(GoogleCalendarStatus {
         configured: true,
@@ -578,7 +616,7 @@ pub(crate) fn disconnect_google_calendar(
 ) -> Result<GoogleCalendarStatus, String> {
     remove_tokens(&app)?;
     Ok(GoogleCalendarStatus {
-        configured: credentials_path(&app)?.is_file(),
+        configured: load_credentials(&app).is_ok(),
         connected: false,
     })
 }
