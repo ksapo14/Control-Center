@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "framer-motion";
-import { Pause, Play, RotateCcw } from "lucide-react";
+import { Pause, Play, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
@@ -29,11 +29,13 @@ export function PomodoroTimer() {
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_SECONDS);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(false);
+  const [focusOpen, setFocusOpen] = useState(false);
   const [minuteDraft, setMinuteDraft] = useState("25");
   const [secondDraft, setSecondDraft] = useState("00");
   const endTimeRef = useRef<number | null>(null);
   const lastDurationRef = useRef(DEFAULT_SECONDS);
   const activeControlRef = useRef<HTMLButtonElement>(null);
+  const closeControlRef = useRef<HTMLButtonElement>(null);
   const reduceMotion = useReducedMotion();
   const rawBass = useMotionValue(0);
   const rawMids = useMotionValue(0);
@@ -41,12 +43,12 @@ export function PomodoroTimer() {
   const bass = useSpring(rawBass, { stiffness: 82, damping: 17, mass: 0.9 });
   const mids = useSpring(rawMids, { stiffness: 108, damping: 19, mass: 0.72 });
   const treble = useSpring(rawTreble, { stiffness: 148, damping: 21, mass: 0.56 });
-  const bassScale = useTransform(bass, [0, 1], [0.9, 1.3]);
-  const midsScale = useTransform(mids, [0, 1], [0.92, 1.24]);
-  const trebleScale = useTransform(treble, [0, 1], [0.88, 1.2]);
-  const bassOpacity = useTransform(bass, [0, 1], [0.56, 1]);
-  const midsOpacity = useTransform(mids, [0, 1], [0.52, 0.96]);
-  const trebleOpacity = useTransform(treble, [0, 1], [0.5, 0.94]);
+  const bassScale = useTransform(bass, [0, 1], [0.84, 1.42]);
+  const midsScale = useTransform(mids, [0, 1], [0.88, 1.34]);
+  const trebleScale = useTransform(treble, [0, 1], [0.9, 1.28]);
+  const bassOpacity = useTransform(bass, [0, 1], [0.46, 1]);
+  const midsOpacity = useTransform(mids, [0, 1], [0.44, 0.98]);
+  const trebleOpacity = useTransform(treble, [0, 1], [0.42, 0.96]);
 
   const minutes = Math.floor(remainingSeconds / 60);
   const seconds = remainingSeconds % 60;
@@ -55,6 +57,7 @@ export function PomodoroTimer() {
   const dismissCompletion = useCallback(() => {
     const resetSeconds = lastDurationRef.current;
     setCompleted(false);
+    setFocusOpen(false);
     setRemainingSeconds(resetSeconds);
     setMinuteDraft(formatTimePart(Math.floor(resetSeconds / 60)));
     setSecondDraft(formatTimePart(resetSeconds % 60));
@@ -72,6 +75,7 @@ export function PomodoroTimer() {
         setSecondDraft("00");
         endTimeRef.current = null;
         setCompleted(true);
+        setFocusOpen(true);
         setRunning(false);
       }
     };
@@ -82,7 +86,7 @@ export function PomodoroTimer() {
   }, [running]);
 
   useEffect(() => {
-    if (!timerActive) return;
+    if (!focusOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => activeControlRef.current?.focus(), reduceMotion ? 0 : 500);
@@ -92,9 +96,21 @@ export function PomodoroTimer() {
         dismissCompletion();
         return;
       }
+      if (event.key === "Escape" && running) {
+        setFocusOpen(false);
+        return;
+      }
       if (event.key !== "Tab") return;
       event.preventDefault();
-      activeControlRef.current?.focus();
+      if (running && closeControlRef.current) {
+        const nextControl =
+          document.activeElement === activeControlRef.current
+            ? closeControlRef.current
+            : activeControlRef.current;
+        nextControl?.focus();
+      } else {
+        activeControlRef.current?.focus();
+      }
     };
 
     document.addEventListener("keydown", keepFocusOnTimer);
@@ -103,10 +119,10 @@ export function PomodoroTimer() {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", keepFocusOnTimer);
     };
-  }, [completed, dismissCompletion, reduceMotion, timerActive]);
+  }, [completed, dismissCompletion, focusOpen, reduceMotion, running]);
 
   useEffect(() => {
-    if (!running || reduceMotion || !isTauriRuntime()) {
+    if (!running || !focusOpen || reduceMotion || !isTauriRuntime()) {
       rawBass.set(0);
       rawMids.set(0);
       rawTreble.set(0);
@@ -145,7 +161,7 @@ export function PomodoroTimer() {
       rawMids.set(0);
       rawTreble.set(0);
     };
-  }, [rawBass, rawMids, rawTreble, reduceMotion, running]);
+  }, [focusOpen, rawBass, rawMids, rawTreble, reduceMotion, running]);
 
   const play = () => {
     const nextMinutes = parseTimePart(minuteDraft, 99);
@@ -157,6 +173,7 @@ export function PomodoroTimer() {
     if (nextTotal <= 0) return;
     lastDurationRef.current = nextTotal;
     setCompleted(false);
+    setFocusOpen(true);
     endTimeRef.current = Date.now() + nextTotal * 1000;
     setRunning(true);
   };
@@ -170,7 +187,12 @@ export function PomodoroTimer() {
     setMinuteDraft(formatTimePart(Math.floor(next / 60)));
     setSecondDraft(formatTimePart(next % 60));
     endTimeRef.current = null;
-    if (next === 0) setCompleted(true);
+    if (next === 0) {
+      setCompleted(true);
+      setFocusOpen(true);
+    } else {
+      setFocusOpen(false);
+    }
     setRunning(false);
   };
 
@@ -200,20 +222,33 @@ export function PomodoroTimer() {
       role={focused ? (completed ? "alertdialog" : "dialog") : undefined}
       aria-modal={focused ? true : undefined}
       aria-label={focused ? (completed ? "Pomodoro complete" : "Active Pomodoro timer") : "Pomodoro timer"}
-      aria-hidden={!focused && timerActive ? true : undefined}
+      aria-hidden={!focused && focusOpen ? true : undefined}
       initial={focused || reduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }}
-      animate={{ opacity: !focused && timerActive ? 0 : 1, y: 0, scale: 1 }}
+      animate={{ opacity: !focused && focusOpen ? 0 : 1, y: 0, scale: 1 }}
       transition={{ duration: reduceMotion ? 0 : 0.9, ease: [0.22, 1, 0.36, 1], delay: focused ? 0 : 0.12 }}
       className={`widget-panel relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] border-t-white/[0.16] bg-graphite-800 shadow-panel ${
         focused
           ? `pointer-events-auto max-h-[calc(100dvh-2rem)] min-h-[clamp(280px,54vh,360px)] w-[min(31rem,calc(100vw-2rem))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_90px_rgba(0,0,0,0.72)] ${
               completed ? "border-red-400/35" : "border-signal-400/20"
             }`
-          : `h-full min-h-[220px] md:col-span-2 lg:col-span-3 ${timerActive ? "pointer-events-none" : ""}`
+          : `h-full min-h-[220px] md:col-span-2 lg:col-span-3 ${focusOpen ? "pointer-events-none" : ""}`
       }`}
     >
       <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       <h2 className="sr-only">Pomodoro</h2>
+
+      {focused && running && (
+        <button
+          ref={closeControlRef}
+          type="button"
+          onClick={() => setFocusOpen(false)}
+          aria-label="Exit Pomodoro focus view"
+          title="Exit focus view"
+          className="absolute right-3 top-3 z-10 grid size-9 place-items-center rounded-full border border-white/[0.08] bg-black/20 text-stone-500 shadow-well transition hover:border-white/[0.14] hover:bg-white/[0.05] hover:text-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400"
+        >
+          <X size={17} strokeWidth={1.8} />
+        </button>
+      )}
 
       <div
         className={`relative flex min-h-0 flex-1 flex-col items-center justify-center px-4 ${
@@ -290,7 +325,7 @@ export function PomodoroTimer() {
       {timerPanel(false)}
 
       <AnimatePresence initial={false}>
-        {timerActive && (
+        {focusOpen && (
           <motion.div
             key="pomodoro-veil"
             aria-hidden="true"
@@ -405,7 +440,7 @@ export function PomodoroTimer() {
       </AnimatePresence>
 
       <AnimatePresence initial={false}>
-        {timerActive && (
+        {focusOpen && (
           <motion.div
             key="pomodoro-focus-panel"
             className="pointer-events-none fixed inset-0 z-50 grid place-items-center p-4"
