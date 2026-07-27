@@ -6,8 +6,12 @@ import {
   Chrome,
   FolderCode,
   Gamepad2,
+  Github,
   LayoutGrid,
   MessageSquareText,
+  NotebookPen,
+  Sparkles,
+  Youtube,
   type LucideIcon,
 } from "lucide-react";
 import { useState } from "react";
@@ -19,7 +23,7 @@ type Launcher = {
   label: string;
   detail: string;
   icon: LucideIcon;
-  kind: "app" | "web" | "folder";
+  kind: "app" | "web" | "chrome-web" | "folder";
   target: string;
 };
 
@@ -35,6 +39,10 @@ const launchers: Launcher[] = [
   },
   { label: "ChatGPT", detail: "Beta", icon: MessageSquareText, kind: "app", target: "ChatGPT (Beta)" },
   { label: "VS Code", detail: "Choose folder", icon: FolderCode, kind: "folder", target: "" },
+  { label: "YouTube", detail: "Chrome", icon: Youtube, kind: "chrome-web", target: "youtube" },
+  { label: "GitHub", detail: "Chrome", icon: Github, kind: "chrome-web", target: "github" },
+  { label: "Gemini", detail: "Chrome", icon: Sparkles, kind: "chrome-web", target: "gemini" },
+  { label: "NeatNotes", detail: "Notes app", icon: NotebookPen, kind: "app", target: "NeatNotes" },
 ];
 
 export function AppLauncherWidget() {
@@ -47,7 +55,21 @@ export function AppLauncherWidget() {
       if (item.kind === "web") {
         if (isTauriRuntime()) await openExternal(item.target);
         else window.open(item.target, "_blank", "noopener,noreferrer");
-        setStatus("Calendar opened");
+        setStatus(`${item.label} opened`);
+        return;
+      }
+
+      if (item.kind === "chrome-web") {
+        if (isTauriRuntime()) await invoke("launch_chrome_site", { site: item.target });
+        else {
+          const previewSites: Record<string, string> = {
+            youtube: "https://www.youtube.com/",
+            github: "https://github.com/",
+            gemini: "https://gemini.google.com/",
+          };
+          window.open(previewSites[item.target], "_blank", "noopener,noreferrer");
+        }
+        setStatus(`${item.label} opened in Chrome`);
         return;
       }
 
@@ -78,13 +100,13 @@ export function AppLauncherWidget() {
 
   return (
     <WidgetFrame
-      title="Applications"
+      title="Quick links"
       icon={<LayoutGrid size={16} strokeWidth={1.7} />}
       className="md:col-span-2 lg:col-span-5"
     >
       <div className="flex h-full min-h-[250px] flex-col p-3.5">
-        <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {launchers.map((item, index) => {
+        <div className="grid flex-1 grid-cols-3 gap-2.5 lg:grid-cols-5">
+          {launchers.map((item) => {
             const Icon = item.icon;
             const busy = busyTarget === item.label;
             return (
@@ -93,14 +115,14 @@ export function AppLauncherWidget() {
                 onClick={() => void launch(item)}
                 disabled={busyTarget !== null}
                 aria-label={`${item.label} ${item.detail}`}
-                className={index === launchers.length - 1 ? "col-span-2 sm:col-span-1" : undefined}
+                className="aspect-square min-h-0"
               >
-                <span className="flex h-full min-h-[94px] flex-col items-center justify-center px-2 py-3 text-center">
-                  <span className="mb-3 grid size-10 place-items-center rounded-[9px] border border-black/50 bg-black/15 text-signal-300 shadow-well">
-                    <Icon size={21} strokeWidth={1.55} className={busy ? "animate-pulse" : ""} />
+                <span className="flex h-full min-h-0 flex-col items-center justify-center px-1.5 py-2 text-center">
+                  <span className="mb-2 grid size-8 place-items-center rounded-[8px] border border-black/50 bg-black/15 text-signal-300 shadow-well">
+                    <Icon size={18} strokeWidth={1.55} className={busy ? "animate-pulse" : ""} />
                   </span>
-                  <span className="whitespace-nowrap text-xs font-semibold text-stone-200">{item.label}</span>
-                  <span className="mt-1 whitespace-nowrap text-[10px] uppercase tracking-[0.08em] text-stone-600">
+                  <span className="max-w-full truncate text-[11px] font-semibold text-stone-200">{item.label}</span>
+                  <span className="mt-0.5 max-w-full truncate text-[9px] uppercase tracking-[0.06em] text-stone-600">
                     {item.detail}
                   </span>
                 </span>

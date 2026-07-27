@@ -116,6 +116,11 @@ fn launch_app(app_name: String) -> Result<(), String> {
                 }
             }
             "ChatGPT (Beta)" => launch_start_app(&["ChatGPT (Beta)", "ChatGPT"]),
+            "NeatNotes" => Command::new("explorer.exe")
+                .arg("shell:AppsFolder\\StameSoftwares.NeatNotes_vas53b8yfkk7r!App")
+                .spawn()
+                .map(|_| ())
+                .map_err(|error| command_error("NeatNotes could not be launched", error)),
             _ => Err("That application is not on the control panel allowlist".into()),
         };
     }
@@ -124,6 +129,34 @@ fn launch_app(app_name: String) -> Result<(), String> {
     {
         let _ = app_name;
         Err("Application launching is currently configured for Windows".into())
+    }
+}
+
+#[tauri::command]
+fn launch_chrome_site(site: String) -> Result<(), String> {
+    let url = match site.as_str() {
+        "youtube" => "https://www.youtube.com/",
+        "github" => "https://github.com/",
+        "gemini" => "https://gemini.google.com/",
+        _ => return Err("That website is not on the control panel allowlist".into()),
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        let executable = chrome_executable().ok_or_else(|| {
+            "Google Chrome was not found in a standard install location".to_string()
+        })?;
+        return Command::new(executable)
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| command_error("Chrome could not open the website", error));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = url;
+        Err("Chrome website launching is currently configured for Windows".into())
     }
 }
 
@@ -1477,6 +1510,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             launch_app,
+            launch_chrome_site,
             open_vscode_directory,
             connect_bluetooth_device,
             disconnect_bluetooth_device,

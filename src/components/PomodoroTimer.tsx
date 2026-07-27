@@ -43,12 +43,12 @@ export function PomodoroTimer() {
   const bass = useSpring(rawBass, { stiffness: 82, damping: 17, mass: 0.9 });
   const mids = useSpring(rawMids, { stiffness: 108, damping: 19, mass: 0.72 });
   const treble = useSpring(rawTreble, { stiffness: 148, damping: 21, mass: 0.56 });
-  const bassScale = useTransform(bass, [0, 1], [0.84, 1.42]);
-  const midsScale = useTransform(mids, [0, 1], [0.88, 1.34]);
-  const trebleScale = useTransform(treble, [0, 1], [0.9, 1.28]);
-  const bassOpacity = useTransform(bass, [0, 1], [0.46, 1]);
-  const midsOpacity = useTransform(mids, [0, 1], [0.44, 0.98]);
-  const trebleOpacity = useTransform(treble, [0, 1], [0.42, 0.96]);
+  const bassScale = useTransform(bass, [0, 1], [0.9, 1.5]);
+  const midsScale = useTransform(mids, [0, 1], [0.92, 1.42]);
+  const trebleScale = useTransform(treble, [0, 1], [0.94, 1.34]);
+  const bassOpacity = useTransform(bass, [0, 1], [0.62, 1]);
+  const midsOpacity = useTransform(mids, [0, 1], [0.6, 1]);
+  const trebleOpacity = useTransform(treble, [0, 1], [0.58, 1]);
 
   const minutes = Math.floor(remainingSeconds / 60);
   const seconds = remainingSeconds % 60;
@@ -379,10 +379,13 @@ export function PomodoroTimer() {
                   transition={{ duration: reduceMotion ? 0.16 : 0.8, ease: "easeInOut" }}
                 >
               <motion.div
-                className="absolute -left-[24vmax] top-[18vh] size-[72vmax] rounded-full blur-[86px] mix-blend-screen will-change-transform"
+                className="absolute -left-[20vmax] top-[14vh] h-[68vmax] w-[76vmax] blur-[54px] mix-blend-screen will-change-transform"
                 style={{
-                  background: "radial-gradient(circle, rgba(34, 255, 204, 0.4) 0%, rgba(0, 191, 166, 0.17) 36%, transparent 69%)",
-                  opacity: reduceMotion ? 0.82 : bassOpacity,
+                  background:
+                    "radial-gradient(circle at 32% 28%, rgba(145, 255, 226, 0.7) 0%, transparent 19%), radial-gradient(ellipse at 48% 52%, rgba(34, 255, 204, 0.58) 0%, rgba(0, 191, 166, 0.34) 48%, transparent 77%)",
+                  borderRadius: "63% 37% 54% 46% / 42% 58% 35% 65%",
+                  boxShadow: "inset 0 0 72px rgba(156, 255, 230, 0.16)",
+                  opacity: reduceMotion ? 0.88 : bassOpacity,
                   scale: reduceMotion ? 1 : bassScale,
                 }}
                 animate={
@@ -397,10 +400,13 @@ export function PomodoroTimer() {
                 transition={{ duration: 24, repeat: Infinity, ease: "easeInOut" }}
               />
               <motion.div
-                className="absolute left-[22vw] -top-[24vmax] h-[68vmax] w-[46vmax] -rotate-12 rounded-full blur-[96px] mix-blend-screen will-change-transform"
+                className="absolute left-[20vw] -top-[20vmax] h-[70vmax] w-[50vmax] -rotate-12 blur-[58px] mix-blend-screen will-change-transform"
                 style={{
-                  background: "radial-gradient(ellipse, rgba(120, 93, 255, 0.38) 0%, rgba(80, 46, 235, 0.15) 40%, transparent 72%)",
-                  opacity: reduceMotion ? 0.78 : midsOpacity,
+                  background:
+                    "radial-gradient(circle at 68% 25%, rgba(191, 174, 255, 0.62) 0%, transparent 18%), radial-gradient(ellipse at 48% 50%, rgba(120, 93, 255, 0.56) 0%, rgba(80, 46, 235, 0.3) 49%, transparent 78%)",
+                  borderRadius: "46% 54% 34% 66% / 61% 38% 62% 39%",
+                  boxShadow: "inset 0 0 76px rgba(199, 185, 255, 0.14)",
+                  opacity: reduceMotion ? 0.84 : midsOpacity,
                   scale: reduceMotion ? 1 : midsScale,
                 }}
                 animate={
@@ -415,10 +421,13 @@ export function PomodoroTimer() {
                 transition={{ duration: 29, repeat: Infinity, ease: "easeInOut" }}
               />
               <motion.div
-                className="absolute -right-[18vmax] -top-[16vmax] h-[50vmax] w-[42vmax] rounded-full blur-[80px] mix-blend-screen will-change-transform"
+                className="absolute -right-[14vmax] -top-[12vmax] h-[54vmax] w-[46vmax] blur-[48px] mix-blend-screen will-change-transform"
                 style={{
-                  background: "radial-gradient(ellipse, rgba(255, 178, 43, 0.46) 0%, rgba(255, 47, 143, 0.16) 38%, transparent 70%)",
-                  opacity: reduceMotion ? 0.76 : trebleOpacity,
+                  background:
+                    "radial-gradient(circle at 63% 28%, rgba(255, 229, 151, 0.72) 0%, transparent 17%), radial-gradient(ellipse at 50% 48%, rgba(255, 178, 43, 0.62) 0%, rgba(255, 47, 143, 0.3) 48%, transparent 76%)",
+                  borderRadius: "57% 43% 68% 32% / 36% 64% 44% 56%",
+                  boxShadow: "inset 0 0 64px rgba(255, 231, 165, 0.16)",
+                  opacity: reduceMotion ? 0.82 : trebleOpacity,
                   scale: reduceMotion ? 1 : trebleScale,
                 }}
                 animate={
