@@ -11,7 +11,12 @@ import { TaskManager } from "./components/TaskManager";
 import { TitleBarActions } from "./components/TitleBarActions";
 import { VolumeWidget } from "./components/VolumeWidget";
 
+/**
+ * Renders the root control-panel shell and arranges the system widgets.
+ * @returns The complete application interface.
+ */
 export default function App() {
+  // --- Dashboard Layout ---
   return (
     <main className="relative min-h-[100dvh] overflow-x-hidden bg-graphite-950 text-stone-100">
       <div className="ambient-light pointer-events-none fixed inset-0" />

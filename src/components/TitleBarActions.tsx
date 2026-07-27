@@ -2,7 +2,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { Minus, X } from "lucide-react";
 import { isTauriRuntime } from "../lib/runtime";
 
+/**
+ * Renders native window controls for the custom desktop title bar.
+ * @returns Minimize and close controls; inert controls in browser preview mode.
+ * @remarks Side effects: invokes Tauri window commands when a control is selected.
+ */
 export function TitleBarActions() {
+  /**
+   * Routes a supported title-bar action to the native window.
+   * @param action - The window operation requested by the user.
+   * @returns A promise that resolves after the native command completes.
+   * @remarks Side effects: minimizes or closes the Tauri window.
+   */
   const runWindowAction = async (action: "minimize" | "close") => {
     if (!isTauriRuntime()) return;
     await invoke(action === "minimize" ? "minimize_main_window" : "close_main_window");

@@ -7,6 +7,12 @@ type TactileButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   selected?: boolean;
 };
 
+/**
+ * Renders the shared tactile button while forwarding native button behavior and its ref.
+ * @param props - Native button props plus the optional selected appearance.
+ * @param ref - The forwarded reference to the underlying button.
+ * @returns A consistently styled native button.
+ */
 export const TactileButton = forwardRef<HTMLButtonElement, TactileButtonProps>(function TactileButton(
   { className, children, selected = false, type = "button", ...props },
   ref,

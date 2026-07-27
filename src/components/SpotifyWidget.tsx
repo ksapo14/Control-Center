@@ -67,7 +67,13 @@ const previewPlayback: SpotifyPlayback = {
   durationMs: 214_000,
 };
 
+/**
+ * Coordinates Spotify authorization, playlists, playback state, and transport controls.
+ * @returns A Spotify dashboard deck with setup and connected states.
+ * @remarks Side effects: persists authorization through native commands and controls active playback.
+ */
 export function SpotifyWidget() {
+  // --- Connection and Playback State ---
   const [selected, setSelected] = useState(0);
   const [connection, setConnection] = useState<SpotifyStatus>({ configured: false, connected: false });
   const [playback, setPlayback] = useState<SpotifyPlayback>(emptyPlayback);
@@ -78,6 +84,13 @@ export function SpotifyWidget() {
   const [loaded, setLoaded] = useState(false);
   const [notice, setNotice] = useState("Checking Spotify connection");
 
+  // --- Playback Synchronization ---
+
+  /**
+   * Synchronizes the UI with the active Spotify Connect device.
+   * @returns The latest playback snapshot, or `null` when the read fails.
+   * @remarks Side effects: reads Spotify state and updates playback feedback.
+   */
   const refreshPlayback = useCallback(async () => {
     if (!isTauriRuntime()) return;
     try {
@@ -136,6 +149,13 @@ export function SpotifyWidget() {
     [playback.durationMs, playback.progressMs],
   );
 
+  // --- Authorization Actions ---
+
+  /**
+   * Starts Spotify's browser authorization flow using the saved client ID.
+   * @returns A promise that resolves after connection state is updated.
+   * @remarks Side effects: opens the system browser and stores OAuth tokens in the desktop runtime.
+   */
   const connect = async () => {
     if (!isTauriRuntime()) return;
     setBusy(true);
@@ -153,6 +173,11 @@ export function SpotifyWidget() {
     }
   };
 
+  /**
+   * Validates and saves a client ID before continuing into authorization.
+   * @returns A promise that resolves after configuration and the connection attempt.
+   * @remarks Side effects: replaces saved Spotify configuration and may open browser authorization.
+   */
   const configureAndConnect = async () => {
     const trimmed = clientId.trim();
     if (!trimmed) {
@@ -176,6 +201,11 @@ export function SpotifyWidget() {
     await connect();
   };
 
+  /**
+   * Removes the locally stored Spotify session and resets playback state.
+   * @returns A promise that resolves after disconnection is reflected in the UI.
+   * @remarks Side effects: deletes persisted Spotify OAuth tokens.
+   */
   const disconnect = async () => {
     if (!isTauriRuntime()) return;
     setBusy(true);
@@ -191,6 +221,14 @@ export function SpotifyWidget() {
     }
   };
 
+  // --- Playback Actions ---
+
+  /**
+   * Starts a curated playlist on the active Spotify Connect device.
+   * @param index - The selected playlist's index in the curated configuration.
+   * @returns A promise that resolves after playback is started or an error is shown.
+   * @remarks Side effects: changes Spotify playback and the selected playlist state.
+   */
   const openPlaylist = async (index: number) => {
     setSelected(index);
     if (!connection.connected) {
@@ -210,6 +248,12 @@ export function SpotifyWidget() {
     }
   };
 
+  /**
+   * Sends a transport command and confirms Spotify has applied stateful actions.
+   * @param action - The supported playback operation.
+   * @returns A promise that resolves after playback has been reconciled.
+   * @remarks Side effects: changes playback on the active Spotify device.
+   */
   const controlPlayback = async (action: PlaybackAction) => {
     if (!connection.connected) {
       setNotice("Connect Spotify before using playback controls");
@@ -223,6 +267,7 @@ export function SpotifyWidget() {
         await invoke("spotify_playback_action", { action });
         const expectedPlaying = action === "play" ? true : action === "pause" ? false : null;
         let latest: SpotifyPlayback | null = null;
+        // Spotify acknowledges commands before device state converges, so poll briefly for confirmation.
         for (let attempt = 0; attempt < 4; attempt += 1) {
           await new Promise((resolve) => window.setTimeout(resolve, attempt === 0 ? 650 : 350));
           latest = await invoke<SpotifyPlayback>("get_spotify_playback");
@@ -242,6 +287,7 @@ export function SpotifyWidget() {
     }
   };
 
+  // --- Widget Rendering ---
   const showSetup = loaded && (!connection.configured || configuring);
 
   return (

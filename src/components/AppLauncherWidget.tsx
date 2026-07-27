@@ -45,13 +45,28 @@ const launchers: Launcher[] = [
   { label: "NeatNotes", detail: "Notes app", icon: NotebookPen, kind: "app", target: "NeatNotes" },
 ];
 
+/**
+ * Exposes curated shortcuts across native apps, websites, and VS Code folders.
+ * @returns A launcher grid with per-action status feedback.
+ * @remarks Side effects: opens URLs, launches apps, or prompts for a local directory.
+ */
 export function AppLauncherWidget() {
+  // --- Launch State ---
   const [status, setStatus] = useState("Choose a destination");
   const [busyTarget, setBusyTarget] = useState<string | null>(null);
 
+  // --- Destination Routing ---
+
+  /**
+   * Dispatches a launcher entry through the runtime appropriate to its destination kind.
+   * @param item - The configured destination selected by the user.
+   * @returns A promise that resolves once the launch attempt is reflected in the UI.
+   * @remarks Side effects: may open a browser, start an app, or show a native folder picker.
+   */
   const launch = async (item: Launcher) => {
     setBusyTarget(item.label);
     try {
+      // Browser previews bypass native plugins so the same widget remains testable in Vite.
       if (item.kind === "web") {
         if (isTauriRuntime()) await openExternal(item.target);
         else window.open(item.target, "_blank", "noopener,noreferrer");
@@ -98,6 +113,7 @@ export function AppLauncherWidget() {
     }
   };
 
+  // --- Widget Rendering ---
   return (
     <WidgetFrame
       title="Quick links"

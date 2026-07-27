@@ -44,6 +44,11 @@ const calendarColors = [
   { id: "11", name: "Tomato", value: "#d60000" },
 ];
 
+/**
+ * Formats a local date for an HTML date input without introducing a UTC shift.
+ * @param date - The local date to serialize.
+ * @returns A `YYYY-MM-DD` value.
+ */
 function localDateValue(date: Date) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -51,10 +56,19 @@ function localDateValue(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
+/**
+ * Formats a local time for an HTML time input.
+ * @param date - The local time to serialize.
+ * @returns An `HH:mm` value.
+ */
 function localTimeValue(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
+/**
+ * Builds a convenient one-hour default starting at the next half-hour boundary.
+ * @returns Local date, start-time, and end-time input values.
+ */
 function initialSchedule() {
   const now = new Date();
   const start = new Date(now);
@@ -67,7 +81,13 @@ function initialSchedule() {
   };
 }
 
+/**
+ * Provides Google Calendar setup and fast primary-calendar event creation in a modal.
+ * @returns The schedule trigger and its animated dialog when open.
+ * @remarks Side effects: imports credentials, manages OAuth tokens, and creates calendar events.
+ */
 export function QuickSchedule() {
+  // --- Form, Connection, and Dialog State ---
   const [open, setOpen] = useState(false);
   const [status, setStatus] = useState<CalendarStatus>({ configured: false, connected: false });
   const [title, setTitle] = useState("");
@@ -84,11 +104,24 @@ export function QuickSchedule() {
   const titleRef = useRef<HTMLInputElement>(null);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+  // --- Feedback and Connection Status ---
+
+  /**
+   * Updates the modal's unified feedback region.
+   * @param message - The user-facing status detail.
+   * @param kind - The semantic presentation of the message.
+   * @returns Nothing.
+   */
   const showNotice = (message: string, kind: "info" | "error" | "success" = "info") => {
     setNotice(message);
     setNoticeKind(kind);
   };
 
+  /**
+   * Reads whether Calendar credentials and an authorized session are available.
+   * @returns A promise that resolves after status feedback is updated.
+   * @remarks Side effects: invokes the native Calendar status command.
+   */
   const refreshStatus = async () => {
     if (!isTauriRuntime()) {
       showNotice("Google Calendar setup is available in the installed desktop app.");
@@ -108,6 +141,13 @@ export function QuickSchedule() {
     }
   };
 
+  // --- Modal Lifecycle ---
+
+  /**
+   * Opens the scheduler with fresh rounded time defaults and connection state.
+   * @returns Nothing.
+   * @remarks Side effects: resets form state and starts an asynchronous status read.
+   */
   const showDialog = () => {
     const defaults = initialSchedule();
     setDate(defaults.date);
@@ -118,6 +158,11 @@ export function QuickSchedule() {
     void refreshStatus();
   };
 
+  /**
+   * Closes the scheduler and restores focus to its trigger.
+   * @returns Nothing.
+   * @remarks Side effects: updates modal state and schedules a focus change.
+   */
   const closeDialog = () => {
     setOpen(false);
     window.setTimeout(() => triggerRef.current?.focus(), 0);
@@ -129,6 +174,7 @@ export function QuickSchedule() {
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => titleRef.current?.focus(), 80);
 
+    // The custom trap makes this animated div modal behave like a native dialog.
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -161,6 +207,13 @@ export function QuickSchedule() {
     };
   }, [open]);
 
+  // --- Calendar Authorization ---
+
+  /**
+   * Imports a Google Desktop OAuth file through the native picker.
+   * @returns A promise that resolves after configuration state is updated.
+   * @remarks Side effects: opens a file picker and stores protected client credentials.
+   */
   const importCredentials = async () => {
     if (!isTauriRuntime()) return showNotice("Open the installed desktop app to import OAuth credentials.", "error");
     setBusy("import");
@@ -186,6 +239,11 @@ export function QuickSchedule() {
     }
   };
 
+  /**
+   * Starts Google authorization for the imported desktop client.
+   * @returns A promise that resolves after connection feedback is updated.
+   * @remarks Side effects: opens browser authorization and stores protected OAuth tokens.
+   */
   const connectCalendar = async () => {
     setBusy("connect");
     setCreated(null);
@@ -201,6 +259,11 @@ export function QuickSchedule() {
     }
   };
 
+  /**
+   * Removes the local Google Calendar authorization.
+   * @returns A promise that resolves after disconnection is reflected in the UI.
+   * @remarks Side effects: deletes persisted Calendar OAuth tokens.
+   */
   const disconnectCalendar = async () => {
     setBusy("disconnect");
     setCreated(null);
@@ -215,11 +278,20 @@ export function QuickSchedule() {
     }
   };
 
+  // --- Event Creation ---
+
+  /**
+   * Validates the form and creates an event on the user's primary calendar.
+   * @param event - The form submission event to suppress during async creation.
+   * @returns A promise that resolves after success or validation feedback is shown.
+   * @remarks Side effects: sends event data to Google Calendar and clears the title on success.
+   */
   const createEvent = async (event: FormEvent) => {
     event.preventDefault();
     setCreated(null);
     if (!title.trim()) return showNotice("Add an event title.", "error");
 
+    // Interpret picker values locally, then send explicit UTC instants to avoid timezone ambiguity.
     const startDate = new Date(`${date}T${from}:00`);
     const endDate = new Date(`${date}T${to}:00`);
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
@@ -247,12 +319,23 @@ export function QuickSchedule() {
     }
   };
 
+  /**
+   * Opens the most recently created event in Google Calendar.
+   * @returns A promise that resolves after the external URL is dispatched.
+   * @remarks Side effects: opens the system browser or a preview tab.
+   */
   const openCreatedEvent = async () => {
     if (!created) return;
     if (isTauriRuntime()) await openExternal(created.htmlLink);
     else window.open(created.htmlLink, "_blank", "noopener,noreferrer");
   };
 
+  /**
+   * Implements wraparound arrow-key selection for the custom color radio group.
+   * @param event - The keyboard event raised by a color button.
+   * @returns Nothing.
+   * @remarks Side effects: updates the selected Calendar color for horizontal arrows.
+   */
   const preventEnterOnColor = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
     if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
@@ -263,6 +346,7 @@ export function QuickSchedule() {
     }
   };
 
+  // --- Dialog Rendering ---
   const isWorking = busy !== null;
 
   return (

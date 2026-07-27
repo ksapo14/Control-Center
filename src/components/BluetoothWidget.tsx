@@ -14,7 +14,13 @@ const stateLabel: Record<ConnectionState, string> = {
   disconnecting: "Disconnecting",
 };
 
+/**
+ * Manages the connection lifecycle for the dashboard's configured Bluetooth headset.
+ * @returns A Bluetooth status card with connect and disconnect controls.
+ * @remarks Side effects: polls and changes the device's Windows audio endpoint state.
+ */
 export function BluetoothWidget() {
+  // --- Connection State and Polling ---
   const [connection, setConnection] = useState<ConnectionState>("disconnected");
   const [detail, setDetail] = useState("Ready for quick-connect");
   const previewTimer = useRef<number>();
@@ -49,6 +55,13 @@ export function BluetoothWidget() {
     };
   }, []);
 
+  // --- Connection Actions ---
+
+  /**
+   * Requests a Bluetooth audio connection unless another transition is active.
+   * @returns A promise that resolves after the UI reflects the connection result.
+   * @remarks Side effects: changes the native device connection or simulates it in preview mode.
+   */
   const connect = async () => {
     if (connection === "connecting" || connection === "disconnecting") return;
     setConnection("connecting");
@@ -72,6 +85,11 @@ export function BluetoothWidget() {
     }
   };
 
+  /**
+   * Releases the active Bluetooth audio connection.
+   * @returns A promise that resolves after the UI reflects the disconnection result.
+   * @remarks Side effects: changes the native device connection or simulates it in preview mode.
+   */
   const disconnect = async () => {
     if (connection !== "connected") return;
     setConnection("disconnecting");
@@ -95,6 +113,7 @@ export function BluetoothWidget() {
     }
   };
 
+  // --- Widget Rendering ---
   const transitioning = connection === "connecting" || connection === "disconnecting";
 
   return (

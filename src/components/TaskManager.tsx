@@ -33,12 +33,23 @@ const previewApplications: OpenApplication[] = [
   },
 ];
 
+/**
+ * Derives a stable fallback monogram when Windows does not provide an application icon.
+ * @param application - The process metadata displayed by the task manager.
+ * @returns One uppercase character suitable for the process tile.
+ */
 function processInitial(application: OpenApplication) {
   const source = application.name || application.title;
   return source.trim().charAt(0).toUpperCase() || "A";
 }
 
+/**
+ * Presents visible Windows applications and guarded force-close controls in a modal.
+ * @returns The task-manager trigger and its animated dialog when open.
+ * @remarks Side effects: polls native processes and can terminate a selected process tree.
+ */
 export function TaskManager() {
+  // --- Dialog and Process State ---
   const [open, setOpen] = useState(false);
   const [applications, setApplications] = useState<OpenApplication[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,6 +60,14 @@ export function TaskManager() {
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
+  // --- Process Synchronization ---
+
+  /**
+   * Refreshes visible applications while optionally preserving the current status message.
+   * @param quiet - Whether to suppress loading and summary feedback during background polling.
+   * @returns A promise that resolves after the process snapshot is handled.
+   * @remarks Side effects: reads native process state and updates dialog state.
+   */
   const loadApplications = useCallback(async (quiet = false) => {
     if (!quiet) setLoading(true);
     try {
@@ -68,6 +87,13 @@ export function TaskManager() {
     }
   }, []);
 
+  // --- Modal Lifecycle ---
+
+  /**
+   * Opens the modal with a fresh process snapshot and safety warning.
+   * @returns Nothing.
+   * @remarks Side effects: updates modal state and starts an asynchronous process read.
+   */
   const showDialog = () => {
     setOpen(true);
     setNotice("Force close ends the selected process and its child tasks.");
@@ -75,6 +101,11 @@ export function TaskManager() {
     void loadApplications();
   };
 
+  /**
+   * Closes the modal and restores keyboard focus to its trigger.
+   * @returns Nothing.
+   * @remarks Side effects: updates modal state and schedules a focus change.
+   */
   const closeDialog = useCallback(() => {
     setOpen(false);
     window.setTimeout(() => triggerRef.current?.focus(), 0);
@@ -87,6 +118,7 @@ export function TaskManager() {
     const focusTimer = window.setTimeout(() => closeRef.current?.focus(), 80);
     const refreshTimer = window.setInterval(() => void loadApplications(true), 4_000);
 
+    // The custom trap keeps keyboard navigation inside this hand-built modal.
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -120,6 +152,14 @@ export function TaskManager() {
     };
   }, [closeDialog, loadApplications, open]);
 
+  // --- Destructive Process Action ---
+
+  /**
+   * Terminates an unprotected application and refreshes the visible process snapshot.
+   * @param application - The process selected for termination.
+   * @returns A promise that resolves after success or failure has been surfaced.
+   * @remarks Side effects: may terminate the process and all child tasks; unsaved work can be lost.
+   */
   const forceClose = async (application: OpenApplication) => {
     if (application.protected || closingPid !== null) return;
     setClosingPid(application.pid);
@@ -143,6 +183,7 @@ export function TaskManager() {
     }
   };
 
+  // --- Dialog Rendering ---
   return (
     <>
       <TactileButton

@@ -50,6 +50,7 @@ struct TokenResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Calendar configuration and authorization state exposed to the frontend.
 pub(crate) struct GoogleCalendarStatus {
     configured: bool,
     connected: bool,
@@ -57,6 +58,7 @@ pub(crate) struct GoogleCalendarStatus {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+/// Validated event fields accepted across the Tauri command boundary.
 pub(crate) struct CreateCalendarEventRequest {
     title: String,
     start: String,
@@ -66,6 +68,7 @@ pub(crate) struct CreateCalendarEventRequest {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Minimal created-event metadata needed for confirmation and deep-linking.
 pub(crate) struct CreatedCalendarEvent {
     id: String,
     html_link: String,
@@ -79,6 +82,16 @@ fn now_epoch() -> Result<u64, String> {
         .map_err(|error| format!("The system clock is unavailable: {error}"))
 }
 
+/// Resolves and creates the application-specific configuration directory.
+///
+/// # Arguments
+/// * `app` - Tauri handle used for platform-aware path resolution.
+///
+/// # Returns
+/// The writable configuration directory.
+///
+/// # Errors
+/// Returns an error when the path cannot be resolved or created.
 fn app_config_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let directory = app
         .path()
@@ -101,6 +114,16 @@ fn token_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_config_dir(app)?.join(TOKEN_FILE))
 }
 
+/// Validates imported JSON as Google Desktop OAuth credentials for known endpoints.
+///
+/// # Arguments
+/// * `contents` - Raw JSON selected by the user.
+///
+/// # Returns
+/// Parsed client credentials safe for the desktop authorization flow.
+///
+/// # Errors
+/// Returns an error for malformed, web-client, incomplete, or unexpected credentials.
 fn parse_credentials(contents: &str) -> Result<GoogleClientCredentials, String> {
     let file: GoogleCredentialFile = serde_json::from_str(contents)
         .map_err(|error| format!("That file is not valid Google OAuth JSON: {error}"))?;
@@ -120,6 +143,16 @@ fn parse_credentials(contents: &str) -> Result<GoogleClientCredentials, String> 
 }
 
 #[cfg(target_os = "windows")]
+/// Encrypts sensitive Calendar data for the current Windows user with DPAPI.
+///
+/// # Arguments
+/// * `data` - Plaintext bytes to protect.
+///
+/// # Returns
+/// DPAPI-protected bytes.
+///
+/// # Errors
+/// Returns an error when Windows cannot protect the data.
 fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::{
         Foundation::{LocalFree, HLOCAL},
@@ -149,6 +182,16 @@ fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Decrypts Calendar data protected for the current Windows user.
+///
+/// # Arguments
+/// * `data` - DPAPI-protected bytes.
+///
+/// # Returns
+/// The recovered plaintext bytes.
+///
+/// # Errors
+/// Returns an error when Windows cannot unlock the data.
 fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::{
         Foundation::{LocalFree, HLOCAL},
@@ -189,6 +232,17 @@ fn unprotect_bytes(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("Secure Google token storage is currently configured for Windows".into())
 }
 
+/// Persists imported Calendar client credentials using platform protection.
+///
+/// # Arguments
+/// * `app` - Handle used to resolve storage.
+/// * `credentials` - Validated credentials to serialize.
+///
+/// # Returns
+/// Success after the protected file is written.
+///
+/// # Errors
+/// Returns an error when serialization, encryption, or writing fails.
 fn save_credentials(
     app: &tauri::AppHandle,
     credentials: GoogleClientCredentials,
@@ -212,6 +266,16 @@ fn remove_legacy_credentials(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Loads protected credentials and migrates the legacy plaintext file when necessary.
+///
+/// # Arguments
+/// * `app` - Handle used to resolve storage.
+///
+/// # Returns
+/// Validated Google Desktop credentials.
+///
+/// # Errors
+/// Returns an error when credentials are missing, unreadable, or invalid.
 fn load_credentials(app: &tauri::AppHandle) -> Result<GoogleClientCredentials, String> {
     let encrypted_path = credentials_path(app)?;
     if encrypted_path.is_file() {
@@ -223,6 +287,7 @@ fn load_credentials(app: &tauri::AppHandle) -> Result<GoogleClientCredentials, S
         return parse_credentials(&contents);
     }
 
+    // One-time migration removes credentials previously stored as readable JSON.
     let legacy_path = legacy_credentials_path(app)?;
     let contents = fs::read_to_string(&legacy_path).map_err(|_| {
         "Google Calendar is not configured yet. Import the Desktop OAuth JSON first".to_string()
@@ -233,6 +298,17 @@ fn load_credentials(app: &tauri::AppHandle) -> Result<GoogleClientCredentials, S
     Ok(credentials)
 }
 
+/// Saves the Calendar OAuth session in DPAPI-protected storage.
+///
+/// # Arguments
+/// * `app` - Handle used to resolve storage.
+/// * `tokens` - Access, refresh, and expiry values to persist.
+///
+/// # Returns
+/// Success after the protected token file is written.
+///
+/// # Errors
+/// Returns an error when serialization, encryption, or writing fails.
 fn save_tokens(app: &tauri::AppHandle, tokens: &StoredTokens) -> Result<(), String> {
     let serialized = serde_json::to_vec(tokens)
         .map_err(|error| format!("The Calendar token could not be prepared: {error}"))?;
@@ -259,12 +335,27 @@ fn remove_tokens(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Generates cryptographically random, URL-safe OAuth material.
+///
+/// # Arguments
+/// * `byte_count` - Number of random bytes before Base64URL encoding.
+///
+/// # Returns
+/// An unpadded Base64URL string.
 fn random_urlsafe(byte_count: usize) -> String {
     let mut bytes = vec![0_u8; byte_count];
     OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// Sends a minimal completion page to the temporary OAuth callback connection.
+///
+/// # Arguments
+/// * `stream` - Browser TCP connection accepted by the loopback listener.
+/// * `success` - Whether authorization completed successfully.
+///
+/// # Side Effects
+/// Writes and flushes an HTTP response; browser disconnect errors are intentionally ignored.
 fn send_browser_response(stream: &mut std::net::TcpStream, success: bool) {
     let (title, message, color) = if success {
         (
@@ -290,6 +381,14 @@ fn send_browser_response(stream: &mut std::net::TcpStream, success: bool) {
     let _ = stream.flush();
 }
 
+/// Converts Google error payloads into concise, contextual user-facing messages.
+///
+/// # Arguments
+/// * `response` - Unsuccessful HTTP response to consume.
+/// * `context` - Operation-specific prefix.
+///
+/// # Returns
+/// The best available Google error description.
 fn response_error(response: reqwest::blocking::Response, context: &str) -> String {
     let status = response.status();
     let body = response.text().unwrap_or_default();
@@ -313,7 +412,18 @@ fn response_error(response: reqwest::blocking::Response, context: &str) -> Strin
     format!("{context}: {message}")
 }
 
+/// Runs the blocking PKCE browser authorization and persists the resulting token set.
+///
+/// # Arguments
+/// * `app` - Handle used for browser launch and protected storage.
+///
+/// # Returns
+/// Connected Calendar status.
+///
+/// # Errors
+/// Returns an error for listener, browser, callback, token-exchange, or storage failures.
 fn connect_blocking(app: tauri::AppHandle) -> Result<GoogleCalendarStatus, String> {
+    // --- Loopback Callback Setup ---
     let credentials = load_credentials(&app)?;
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|error| format!("The local Google sign-in callback could not start: {error}"))?;
@@ -329,6 +439,7 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<GoogleCalendarStatus, Strin
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = random_urlsafe(32);
 
+    // --- PKCE Authorization Request ---
     let mut authorization_url = Url::parse("https://accounts.google.com/o/oauth2/v2/auth")
         .map_err(|error| format!("The Google authorization URL is invalid: {error}"))?;
     authorization_url
@@ -352,7 +463,9 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<GoogleCalendarStatus, Strin
     #[cfg(not(target_os = "windows"))]
     return Err("Google Calendar sign-in is currently configured for Windows".into());
 
+    // --- Browser Callback Validation ---
     let deadline = Instant::now() + Duration::from_secs(180);
+    // The loopback listener remains bounded so abandoned browser flows cannot block a worker forever.
     let code = loop {
         if Instant::now() >= deadline {
             return Err(
@@ -400,6 +513,7 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<GoogleCalendarStatus, Strin
         }
     };
 
+    // --- Authorization-Code Exchange ---
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -440,6 +554,18 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<GoogleCalendarStatus, Strin
     })
 }
 
+/// Exchanges the saved refresh token and persists the renewed Calendar session.
+///
+/// # Arguments
+/// * `app` - Handle used for token storage.
+/// * `credentials` - Client credentials required by Google's token endpoint.
+/// * `tokens` - Existing session whose access token is expired.
+///
+/// # Returns
+/// The updated token set.
+///
+/// # Errors
+/// Returns an error when refresh, parsing, or protected storage fails.
 fn refresh_access_token(
     app: &tauri::AppHandle,
     credentials: &GoogleClientCredentials,
@@ -474,6 +600,17 @@ fn refresh_access_token(
     Ok(tokens)
 }
 
+/// Returns a usable Calendar access token, refreshing near-expiry sessions as needed.
+///
+/// # Arguments
+/// * `app` - Handle used to load credentials and tokens.
+/// * `force_refresh` - Whether to bypass the normal expiry check after an unauthorized response.
+///
+/// # Returns
+/// A current bearer token.
+///
+/// # Errors
+/// Returns an error when credentials, tokens, or refresh operations fail.
 fn access_token(app: &tauri::AppHandle, force_refresh: bool) -> Result<String, String> {
     let credentials = load_credentials(app)?;
     let tokens = load_tokens(app)?;
@@ -483,6 +620,18 @@ fn access_token(app: &tauri::AppHandle, force_refresh: bool) -> Result<String, S
     Ok(refresh_access_token(app, &credentials, tokens)?.access_token)
 }
 
+/// Sends one authenticated event-creation request to the primary calendar.
+///
+/// # Arguments
+/// * `client` - Configured blocking HTTP client.
+/// * `token` - Calendar bearer token.
+/// * `body` - Google Calendar event resource.
+///
+/// # Returns
+/// The unconsumed HTTP response for status-specific handling.
+///
+/// # Errors
+/// Returns an error when the request cannot reach Google.
 fn send_event(
     client: &Client,
     token: &str,
@@ -496,10 +645,22 @@ fn send_event(
         .map_err(|error| format!("The event could not reach Google Calendar: {error}"))
 }
 
+/// Validates and creates a primary-calendar event, retrying once after authorization expiry.
+///
+/// # Arguments
+/// * `app` - Handle used for authentication storage.
+/// * `request` - Frontend-supplied event fields.
+///
+/// # Returns
+/// Created event metadata for user confirmation.
+///
+/// # Errors
+/// Returns an error for invalid input, authentication failures, or rejected API responses.
 fn create_event_blocking(
     app: tauri::AppHandle,
     request: CreateCalendarEventRequest,
 ) -> Result<CreatedCalendarEvent, String> {
+    // --- Input Validation ---
     let title = request.title.trim();
     if title.is_empty() {
         return Err("Add a title before saving the event".into());
@@ -520,6 +681,7 @@ fn create_event_blocking(
         }
     }
 
+    // --- Google Event Resource ---
     let mut body = json!({
         "summary": title,
         "start": { "dateTime": request.start },
@@ -529,12 +691,14 @@ fn create_event_blocking(
         body["colorId"] = Value::String(color);
     }
 
+    // --- Authenticated API Request ---
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
         .map_err(|error| format!("The Google connection client could not start: {error}"))?;
     let token = access_token(&app, false)?;
     let mut response = send_event(&client, &token, &body)?;
+    // A 401 can race the local expiry check, so force one refresh before surfacing failure.
     if response.status() == StatusCode::UNAUTHORIZED {
         let token = access_token(&app, true)?;
         response = send_event(&client, &token, &body)?;
@@ -549,6 +713,7 @@ fn create_event_blocking(
         .json()
         .map_err(|error| format!("Google returned an unreadable event: {error}"))?;
 
+    // --- Frontend Response Model ---
     Ok(CreatedCalendarEvent {
         id: event
             .get("id")
@@ -569,6 +734,16 @@ fn create_event_blocking(
 }
 
 #[tauri::command]
+/// Reports whether Calendar credentials and an OAuth session are locally available.
+///
+/// # Arguments
+/// * `app` - Handle used to inspect protected storage.
+///
+/// # Returns
+/// Current configuration and connection flags.
+///
+/// # Errors
+/// Returns an error only when application storage paths cannot be resolved.
 pub(crate) fn get_google_calendar_status(
     app: tauri::AppHandle,
 ) -> Result<GoogleCalendarStatus, String> {
@@ -581,6 +756,20 @@ pub(crate) fn get_google_calendar_status(
 }
 
 #[tauri::command]
+/// Imports and protects Google Desktop OAuth credentials selected by the user.
+///
+/// # Arguments
+/// * `app` - Handle used for protected storage.
+/// * `path` - Native-picker path to the JSON credentials file.
+///
+/// # Returns
+/// Configured but disconnected Calendar status.
+///
+/// # Errors
+/// Returns an error for missing, invalid, unreadable, or unsavable credentials.
+///
+/// # Side Effects
+/// Replaces credentials and removes any session tied to the previous client.
 pub(crate) fn import_google_calendar_credentials(
     app: tauri::AppHandle,
     path: String,
@@ -602,6 +791,16 @@ pub(crate) fn import_google_calendar_credentials(
 }
 
 #[tauri::command]
+/// Runs Calendar browser authorization on a blocking worker thread.
+///
+/// # Arguments
+/// * `app` - Handle moved into the authorization workflow.
+///
+/// # Returns
+/// Connected Calendar status.
+///
+/// # Errors
+/// Returns authorization errors or an unexpected worker-task failure.
 pub(crate) async fn connect_google_calendar(
     app: tauri::AppHandle,
 ) -> Result<GoogleCalendarStatus, String> {
@@ -611,6 +810,16 @@ pub(crate) async fn connect_google_calendar(
 }
 
 #[tauri::command]
+/// Removes the local Calendar OAuth session while retaining client configuration.
+///
+/// # Arguments
+/// * `app` - Handle used for protected storage.
+///
+/// # Returns
+/// Disconnected status with the remaining configuration flag.
+///
+/// # Errors
+/// Returns an error when the token file cannot be removed.
 pub(crate) fn disconnect_google_calendar(
     app: tauri::AppHandle,
 ) -> Result<GoogleCalendarStatus, String> {
@@ -622,6 +831,17 @@ pub(crate) fn disconnect_google_calendar(
 }
 
 #[tauri::command]
+/// Creates a Calendar event on a blocking worker so the Tauri runtime remains responsive.
+///
+/// # Arguments
+/// * `app` - Handle moved into the API workflow.
+/// * `request` - Event fields supplied by the scheduler.
+///
+/// # Returns
+/// Created event metadata.
+///
+/// # Errors
+/// Returns validation, authentication, API, or worker-task errors.
 pub(crate) async fn create_google_calendar_event(
     app: tauri::AppHandle,
     request: CreateCalendarEventRequest,

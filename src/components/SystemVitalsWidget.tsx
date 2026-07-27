@@ -16,8 +16,14 @@ type GaugeProps = {
   icon: ReactNode;
 };
 
+/**
+ * Maps a percentage metric onto the visual sweep of an instrument gauge.
+ * @param props - The metric label, optional percentage, and identifying icon.
+ * @returns A gauge that preserves an explicit unavailable state.
+ */
 function InstrumentGauge({ label, value, icon }: GaugeProps) {
   const safeValue = value ?? 0;
+  // The dial spans 244 degrees, centered around the six-o'clock dead zone.
   const angle = -122 + safeValue * 2.44;
 
   return (
@@ -48,7 +54,13 @@ function InstrumentGauge({ label, value, icon }: GaugeProps) {
   );
 }
 
+/**
+ * Displays periodically refreshed CPU, memory, and GPU utilization.
+ * @returns A three-gauge system-vitals widget.
+ * @remarks Side effects: polls Windows performance counters every four seconds.
+ */
 export function SystemVitalsWidget() {
+  // --- Native Metric Synchronization ---
   const [metrics, setMetrics] = useState<SystemMetrics>({ cpu: 24, ram: 48, gpu: 12 });
   const [status, setStatus] = useState("Live Windows counters");
 
@@ -58,6 +70,7 @@ export function SystemVitalsWidget() {
       return;
     }
 
+    // Native reads can outlive the widget, so ignore responses after cleanup.
     let active = true;
     const refresh = () => {
       void invoke<SystemMetrics>("get_system_metrics")
@@ -78,6 +91,7 @@ export function SystemVitalsWidget() {
     };
   }, []);
 
+  // --- Widget Rendering ---
   return (
     <WidgetFrame
       title="System vitals"

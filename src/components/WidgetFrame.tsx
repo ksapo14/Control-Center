@@ -9,6 +9,11 @@ type WidgetFrameProps = {
   className?: string;
 };
 
+/**
+ * Provides the shared accessible, animated frame used by dashboard widgets.
+ * @param props - The widget title, icon, content, and optional layout classes.
+ * @returns A motion-aware widget section.
+ */
 export function WidgetFrame({
   title,
   icon,

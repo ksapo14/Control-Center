@@ -15,7 +15,13 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   day: "numeric",
 });
 
+/**
+ * Presents synchronized analog and localized digital representations of local time.
+ * @returns A self-updating clock widget.
+ * @remarks Side effects: advances component time once per second while mounted.
+ */
 export function ClockWidget() {
+  // --- Timekeeping ---
   const [now, setNow] = useState(() => new Date());
   const tickMarks = useMemo(() => Array.from({ length: 12 }, (_, index) => index), []);
 
@@ -24,7 +30,9 @@ export function ClockWidget() {
     return () => window.clearInterval(timer);
   }, []);
 
+  // --- Display Model ---
   const seconds = now.getSeconds();
+  // Fractional units keep the analog hands moving continuously between tick marks.
   const minutes = now.getMinutes() + seconds / 60;
   const hours = (now.getHours() % 12) + minutes / 60;
   const timeParts = timeFormatter.formatToParts(now);
@@ -35,6 +43,7 @@ export function ClockWidget() {
     .join("");
   const period = timeParts.find((part) => part.type === "dayPeriod")?.value;
 
+  // --- Widget Rendering ---
   return (
     <WidgetFrame
       title="Local time"

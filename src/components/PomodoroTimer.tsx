@@ -13,19 +13,43 @@ type AudioBands = {
   treble: number;
 };
 
+/**
+ * Constrains user or audio input to a supported numeric interval.
+ * @param value - The value to constrain.
+ * @param minimum - The inclusive lower bound.
+ * @param maximum - The inclusive upper bound.
+ * @returns The value limited to the supplied bounds.
+ */
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+/**
+ * Formats one timer field with a stable two-character width.
+ * @param value - The minute or second value to display.
+ * @returns A zero-padded decimal string.
+ */
 function formatTimePart(value: number) {
   return String(value).padStart(2, "0");
 }
 
+/**
+ * Converts a draft timer field into a safe bounded integer.
+ * @param value - The user-entered timer text.
+ * @param maximum - The maximum supported value for the field.
+ * @returns A normalized timer field value.
+ */
 function parseTimePart(value: string, maximum: number) {
   return clamp(Number.parseInt(value || "0", 10) || 0, 0, maximum);
 }
 
+/**
+ * Runs an editable Pomodoro timer with an immersive, audio-reactive focus view.
+ * @returns The dashboard timer and its focus-mode overlays.
+ * @remarks Side effects: manages focus, body scrolling, timers, and native audio-meter polling.
+ */
 export function PomodoroTimer() {
+  // --- Timer and Focus State ---
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_SECONDS);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(false);
@@ -54,6 +78,13 @@ export function PomodoroTimer() {
   const seconds = remainingSeconds % 60;
   const timerActive = running || completed;
 
+  // --- Completion and Countdown Lifecycle ---
+
+  /**
+   * Dismisses the completion state and restores the last configured duration.
+   * @returns Nothing.
+   * @remarks Side effects: closes focus mode and resets timer state.
+   */
   const dismissCompletion = useCallback(() => {
     const resetSeconds = lastDurationRef.current;
     setCompleted(false);
@@ -63,9 +94,11 @@ export function PomodoroTimer() {
     setSecondDraft(formatTimePart(resetSeconds % 60));
   }, []);
 
+  // --- Countdown Tick ---
   useEffect(() => {
     if (!running || endTimeRef.current === null) return;
 
+    // Derive remaining time from an absolute deadline so throttled tabs do not make the timer drift.
     const update = () => {
       if (endTimeRef.current === null) return;
       const next = Math.max(0, Math.ceil((endTimeRef.current - Date.now()) / 1000));
@@ -85,12 +118,14 @@ export function PomodoroTimer() {
     return () => window.clearInterval(interval);
   }, [running]);
 
+  // --- Focus Containment ---
   useEffect(() => {
     if (!focusOpen) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     const focusTimer = window.setTimeout(() => activeControlRef.current?.focus(), reduceMotion ? 0 : 500);
 
+    // Focus mode intentionally limits navigation to its active controls until dismissed.
     const keepFocusOnTimer = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape" && completed) {
         dismissCompletion();
@@ -121,6 +156,7 @@ export function PomodoroTimer() {
     };
   }, [completed, dismissCompletion, focusOpen, reduceMotion, running]);
 
+  // --- Audio-Reactive Sampling ---
   useEffect(() => {
     if (!running || !focusOpen || reduceMotion || !isTauriRuntime()) {
       rawBass.set(0);
@@ -131,12 +167,14 @@ export function PomodoroTimer() {
 
     let active = true;
     let reading = false;
+    // Serialize samples because overlapping native capture calls cause unnecessary COM pressure.
     const sample = async () => {
       if (reading) return;
       reading = true;
       try {
         const bands = await invoke<AudioBands>("get_system_audio_bands");
         if (active) {
+          // Sub-linear curves lift quieter frequencies enough to keep the visual field responsive.
           rawBass.set(Math.pow(clamp(bands.bass, 0, 1), 0.52));
           rawMids.set(Math.pow(clamp(bands.mids, 0, 1), 0.5));
           rawTreble.set(Math.pow(clamp(bands.treble, 0, 1), 0.46));
@@ -163,6 +201,13 @@ export function PomodoroTimer() {
     };
   }, [focusOpen, rawBass, rawMids, rawTreble, reduceMotion, running]);
 
+  // --- Timer Controls ---
+
+  /**
+   * Normalizes the draft duration and starts an absolute-deadline countdown.
+   * @returns Nothing.
+   * @remarks Side effects: enters focus mode and starts the timer update loop.
+   */
   const play = () => {
     const nextMinutes = parseTimePart(minuteDraft, 99);
     const nextSeconds = parseTimePart(secondDraft, 59);
@@ -178,6 +223,11 @@ export function PomodoroTimer() {
     setRunning(true);
   };
 
+  /**
+   * Captures the exact remaining duration and exits active focus mode.
+   * @returns Nothing.
+   * @remarks Side effects: stops the countdown and updates timer drafts.
+   */
   const pause = () => {
     let next = remainingSeconds;
     if (endTimeRef.current !== null) {
@@ -196,12 +246,22 @@ export function PomodoroTimer() {
     setRunning(false);
   };
 
+  /**
+   * Applies a digits-only minute draft and keeps the total duration synchronized.
+   * @param value - The latest minute input text.
+   * @returns Nothing.
+   */
   const setMinutes = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 2);
     setMinuteDraft(digits);
     setRemainingSeconds(parseTimePart(digits, 99) * 60 + parseTimePart(secondDraft, 59));
   };
 
+  /**
+   * Applies a digits-only second draft capped at a valid clock value.
+   * @param value - The latest second input text.
+   * @returns Nothing.
+   */
   const setSeconds = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 2);
     const nextSeconds = parseTimePart(digits, 59);
@@ -209,6 +269,11 @@ export function PomodoroTimer() {
     setRemainingSeconds(parseTimePart(minuteDraft, 99) * 60 + nextSeconds);
   };
 
+  /**
+   * Commits padded and bounded timer drafts when an input loses focus.
+   * @returns Nothing.
+   * @remarks Side effects: normalizes both input fields and the remaining duration.
+   */
   const normalizeDrafts = () => {
     const nextMinutes = parseTimePart(minuteDraft, 99);
     const nextSeconds = parseTimePart(secondDraft, 59);
@@ -217,6 +282,13 @@ export function PomodoroTimer() {
     setRemainingSeconds(nextMinutes * 60 + nextSeconds);
   };
 
+  // --- Shared Timer Rendering ---
+
+  /**
+   * Builds either the embedded timer or the semantically modal focus-mode variant.
+   * @param focused - Whether to render the focus overlay presentation.
+   * @returns The configured timer panel.
+   */
   const timerPanel = (focused: boolean) => (
     <motion.section
       role={focused ? (completed ? "alertdialog" : "dialog") : undefined}
@@ -320,6 +392,7 @@ export function PomodoroTimer() {
     </motion.section>
   );
 
+  // --- Focus Overlay Rendering ---
   return (
     <>
       {timerPanel(false)}

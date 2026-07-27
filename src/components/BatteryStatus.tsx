@@ -15,6 +15,11 @@ type BatteryData = {
   present: boolean;
 };
 
+/**
+ * Selects the icon that best communicates the current battery state.
+ * @param props - The normalized battery reading.
+ * @returns A charging, level-specific, or unavailable battery glyph.
+ */
 function BatteryGlyph({ battery }: { battery: BatteryData }) {
   if (battery.charging) return <BatteryCharging size={14} strokeWidth={1.7} />;
   if (!battery.present || battery.level === null) return <Battery size={14} strokeWidth={1.7} />;
@@ -23,7 +28,13 @@ function BatteryGlyph({ battery }: { battery: BatteryData }) {
   return <BatteryFull size={14} strokeWidth={1.7} />;
 }
 
+/**
+ * Displays the latest Windows battery state in the application header.
+ * @returns A compact, accessible battery status indicator.
+ * @remarks Side effects: polls the native battery command once per minute while mounted.
+ */
 export function BatteryStatus() {
+  // --- Native State Synchronization ---
   const [battery, setBattery] = useState<BatteryData>({
     level: 78,
     charging: false,
@@ -33,6 +44,7 @@ export function BatteryStatus() {
   useEffect(() => {
     if (!isTauriRuntime()) return;
 
+    // Guard late native responses so an unmounted header is never updated.
     let active = true;
     const refresh = () => {
       void invoke<BatteryData>("get_battery_status")
@@ -49,6 +61,7 @@ export function BatteryStatus() {
     };
   }, []);
 
+  // --- Display Model ---
   const label = battery.present && battery.level !== null ? `${battery.level}%` : "AC";
 
   return (

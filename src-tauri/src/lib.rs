@@ -10,6 +10,13 @@ fn command_error(context: &str, error: impl std::fmt::Display) -> String {
 }
 
 #[cfg(target_os = "windows")]
+/// Creates a child-process command that does not flash a console window.
+///
+/// # Arguments
+/// * `program` - Executable name or path.
+///
+/// # Returns
+/// A configured command that has not yet been started.
 fn hidden_command(program: &str) -> Command {
     use std::os::windows::process::CommandExt;
 
@@ -20,6 +27,16 @@ fn hidden_command(program: &str) -> Command {
 }
 
 #[cfg(target_os = "windows")]
+/// Runs a non-interactive PowerShell script and returns its trimmed standard output.
+///
+/// # Arguments
+/// * `script` - Trusted script text assembled by this backend.
+///
+/// # Returns
+/// The command's standard output.
+///
+/// # Errors
+/// Returns an error when PowerShell cannot start or exits unsuccessfully.
 fn powershell_output(script: &str) -> Result<String, String> {
     let output = hidden_command("powershell.exe")
         .args([
@@ -45,7 +62,18 @@ fn powershell_output(script: &str) -> Result<String, String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Resolves the first matching friendly name to a Windows Start Apps identifier.
+///
+/// # Arguments
+/// * `names` - Ordered aliases accepted for the application.
+///
+/// # Returns
+/// The matching AppsFolder identifier.
+///
+/// # Errors
+/// Returns an error when Start Apps cannot be queried or no alias is installed.
 fn start_apps_id(names: &[&str]) -> Result<String, String> {
+    // Quote embedded apostrophes before placing allowlisted names in PowerShell literals.
     let safe_names = names
         .iter()
         .map(|name| format!("'{}'", name.replace('\'', "''")))
@@ -72,6 +100,16 @@ fn start_apps_id(names: &[&str]) -> Result<String, String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Launches a packaged Start-menu application through the AppsFolder shell namespace.
+///
+/// # Arguments
+/// * `names` - Ordered friendly-name aliases used to resolve the app.
+///
+/// # Returns
+/// Success after Windows accepts the launch request.
+///
+/// # Errors
+/// Returns an error when resolution or process creation fails.
 fn launch_start_app(names: &[&str]) -> Result<(), String> {
     let app_id = start_apps_id(names)?;
     Command::new("explorer.exe")
@@ -82,6 +120,10 @@ fn launch_start_app(names: &[&str]) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Finds Chrome in supported per-user and machine-wide installation locations.
+///
+/// # Returns
+/// The first existing Chrome executable, if one is installed conventionally.
 fn chrome_executable() -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
@@ -100,6 +142,16 @@ fn chrome_executable() -> Option<PathBuf> {
 }
 
 #[tauri::command]
+/// Launches an explicitly allowlisted desktop application.
+///
+/// # Arguments
+/// * `app_name` - Frontend-facing application name.
+///
+/// # Returns
+/// Success after the operating system accepts the launch request.
+///
+/// # Errors
+/// Returns an error for unsupported names, platforms, or process failures.
 fn launch_app(app_name: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
@@ -133,6 +185,16 @@ fn launch_app(app_name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// Opens an allowlisted website in a dedicated Chrome process.
+///
+/// # Arguments
+/// * `site` - Stable allowlist key rather than an arbitrary URL.
+///
+/// # Returns
+/// Success after Chrome accepts the URL.
+///
+/// # Errors
+/// Returns an error for unsupported keys, missing Chrome, or launch failures.
 fn launch_chrome_site(site: String) -> Result<(), String> {
     let url = match site.as_str() {
         "youtube" => "https://www.youtube.com/",
@@ -161,6 +223,10 @@ fn launch_chrome_site(site: String) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Finds Visual Studio Code in supported per-user and machine-wide locations.
+///
+/// # Returns
+/// The first existing VS Code executable, if found.
 fn vscode_executable() -> Option<PathBuf> {
     let mut candidates = Vec::new();
     if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
@@ -174,6 +240,16 @@ fn vscode_executable() -> Option<PathBuf> {
 }
 
 #[tauri::command]
+/// Opens an existing directory in Visual Studio Code.
+///
+/// # Arguments
+/// * `path` - Directory selected through the trusted native picker.
+///
+/// # Returns
+/// Success after VS Code accepts the directory.
+///
+/// # Errors
+/// Returns an error for stale paths, missing executables, or launch failures.
 fn open_vscode_directory(path: String) -> Result<(), String> {
     let directory = PathBuf::from(path);
     if !directory.is_dir() {
@@ -201,6 +277,7 @@ fn open_vscode_directory(path: String) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Owns COM initialization for the current thread and balances it on drop.
 struct ComApartment(bool);
 
 #[cfg(target_os = "windows")]
@@ -213,6 +290,13 @@ impl Drop for ComApartment {
 }
 
 #[cfg(target_os = "windows")]
+/// Initializes multithreaded COM while tolerating a thread with an existing apartment model.
+///
+/// # Returns
+/// A guard that uninitializes COM only when this call initialized it.
+///
+/// # Errors
+/// Returns an error when Windows rejects COM initialization.
 fn initialize_com() -> Result<ComApartment, String> {
     use windows::{
         core::HRESULT,
@@ -239,6 +323,17 @@ enum BluetoothAudioAction {
 }
 
 #[cfg(target_os = "windows")]
+/// Requests a reconnect or disconnect through the Bluetooth audio kernel-streaming topology.
+///
+/// # Arguments
+/// * `device_name` - Friendly-name fragment for the paired audio device.
+/// * `action` - Connection transition to request.
+///
+/// # Returns
+/// Success when the desired state already exists or a matching endpoint accepts the request.
+///
+/// # Errors
+/// Returns an error when the device is absent or Windows rejects every matching endpoint.
 fn request_bluetooth_audio_action(
     device_name: &str,
     action: BluetoothAudioAction,
@@ -263,6 +358,7 @@ fn request_bluetooth_audio_action(
         },
     };
 
+    // --- Device Enumeration ---
     let _com = initialize_com()?;
     let target = device_name.to_lowercase();
 
@@ -282,6 +378,8 @@ fn request_bluetooth_audio_action(
         let mut successful_requests = 0_u32;
         let mut last_error = None;
 
+        // --- Endpoint Matching and Topology Control ---
+        // Bluetooth headsets expose multiple audio endpoints; inspect every friendly-name match.
         for endpoint_index in 0..endpoint_count {
             let endpoint = match endpoints.Item(endpoint_index) {
                 Ok(endpoint) => endpoint,
@@ -400,6 +498,7 @@ fn request_bluetooth_audio_action(
             }
         }
 
+        // --- Aggregate Result ---
         if !matched_device {
             Err(format!(
                 "{device_name} was not found. Confirm that it is paired in Windows."
@@ -417,6 +516,16 @@ fn request_bluetooth_audio_action(
 }
 
 #[tauri::command]
+/// Connects the control panel's allowlisted Bluetooth headset audio endpoint.
+///
+/// # Arguments
+/// * `device_name` - Device name supplied by the frontend.
+///
+/// # Returns
+/// Success after Windows accepts the connection request.
+///
+/// # Errors
+/// Returns an error for non-allowlisted devices, unsupported platforms, or Windows failures.
 fn connect_bluetooth_device(device_name: String) -> Result<(), String> {
     if device_name != "JLab GO Pop+" {
         return Err("That device is not on the control panel allowlist".into());
@@ -434,6 +543,16 @@ fn connect_bluetooth_device(device_name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// Disconnects the allowlisted headset and verifies that Windows applied the transition.
+///
+/// # Arguments
+/// * `device_name` - Device name supplied by the frontend.
+///
+/// # Returns
+/// Success once the endpoint is no longer active.
+///
+/// # Errors
+/// Returns an error for invalid devices or a transition that fails after bounded retries.
 fn disconnect_bluetooth_device(device_name: String) -> Result<(), String> {
     if device_name != "JLab GO Pop+" {
         return Err("That device is not on the control panel allowlist".into());
@@ -444,6 +563,7 @@ fn disconnect_bluetooth_device(device_name: String) -> Result<(), String> {
         use std::{thread::sleep, time::Duration};
 
         let mut last_error = None;
+        // Some drivers acknowledge before changing endpoint state, so verify and retry once.
         for _ in 0..2 {
             match request_bluetooth_audio_action(&device_name, BluetoothAudioAction::Disconnect) {
                 Ok(()) => {
@@ -471,6 +591,16 @@ fn disconnect_bluetooth_device(device_name: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// Reports whether the allowlisted Bluetooth audio endpoint is currently active.
+///
+/// # Arguments
+/// * `device_name` - Device name supplied by the frontend.
+///
+/// # Returns
+/// `true` when any matching Windows audio endpoint is active.
+///
+/// # Errors
+/// Returns an error for invalid devices, unsupported platforms, or enumeration failures.
 fn get_bluetooth_device_status(device_name: String) -> Result<bool, String> {
     if device_name != "JLab GO Pop+" {
         return Err("That device is not on the control panel allowlist".into());
@@ -522,6 +652,13 @@ fn get_bluetooth_device_status(device_name: String) -> Result<bool, String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Acquires the master-volume interface for the default console render endpoint.
+///
+/// # Returns
+/// The Windows endpoint-volume COM interface.
+///
+/// # Errors
+/// Returns an error when the default device or its volume service is unavailable.
 fn endpoint_volume() -> Result<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume, String>
 {
     use windows::Win32::{
@@ -563,6 +700,7 @@ static AUDIO_LAST_REQUEST_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::
 
 #[derive(Clone, Copy, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Normalized energy envelopes returned to the audio-reactive frontend.
 struct AudioBands {
     bass: f32,
     mids: f32,
@@ -570,6 +708,10 @@ struct AudioBands {
 }
 
 #[cfg(target_os = "windows")]
+/// Returns a coarse wall-clock timestamp used only for audio-meter idle detection.
+///
+/// # Returns
+/// Milliseconds since the Unix epoch, or zero if the system clock is invalid.
 fn audio_meter_clock_ms() -> u64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -578,6 +720,10 @@ fn audio_meter_clock_ms() -> u64 {
 }
 
 #[cfg(target_os = "windows")]
+/// Resets all lock-free audio envelopes when capture is stopped or unavailable.
+///
+/// # Side Effects
+/// Writes zero to the shared audio-band atomics.
 fn clear_audio_bands() {
     use std::sync::atomic::Ordering;
 
@@ -596,6 +742,7 @@ enum AudioSampleEncoding {
 }
 
 #[cfg(target_os = "windows")]
+/// Describes a validated Windows mix format used to decode interleaved loopback frames.
 struct AudioMixFormat {
     sample_rate: f32,
     channels: usize,
@@ -606,6 +753,16 @@ struct AudioMixFormat {
 
 #[cfg(target_os = "windows")]
 impl AudioMixFormat {
+    /// Parses and validates a Windows `WAVEFORMATEX` or extensible mix format.
+    ///
+    /// # Arguments
+    /// * `format` - Pointer owned by the Windows audio client for the duration of this call.
+    ///
+    /// # Returns
+    /// A decoder description for supported float or PCM samples.
+    ///
+    /// # Errors
+    /// Returns an error for invalid channels, rates, tags, or sample sizes.
     unsafe fn from_wave_format(
         format: *const windows::Win32::Media::Audio::WAVEFORMATEX,
     ) -> Result<Self, String> {
@@ -665,6 +822,15 @@ impl AudioMixFormat {
         })
     }
 
+    /// Decodes one interleaved channel sample into a normalized floating-point amplitude.
+    ///
+    /// # Arguments
+    /// * `data` - Capture packet bytes matching this format.
+    /// * `frame` - Zero-based frame index.
+    /// * `channel` - Zero-based channel index.
+    ///
+    /// # Returns
+    /// A finite amplitude, substituting zero for invalid floating-point input.
     fn channel_sample(&self, data: &[u8], frame: usize, channel: usize) -> f32 {
         let frame_start = frame * self.block_align;
         let offset = frame_start + channel * self.bytes_per_sample;
@@ -712,6 +878,7 @@ impl AudioMixFormat {
 }
 
 #[cfg(target_os = "windows")]
+/// Splits loopback audio into smoothed low-, mid-, and high-frequency energy bands.
 struct AudioBandAnalyzer {
     low_states: Vec<f32>,
     high_states: Vec<f32>,
@@ -724,6 +891,14 @@ struct AudioBandAnalyzer {
 
 #[cfg(target_os = "windows")]
 impl AudioBandAnalyzer {
+    /// Creates per-channel first-order filters for the supplied capture format.
+    ///
+    /// # Arguments
+    /// * `sample_rate` - Capture rate in samples per second.
+    /// * `channels` - Number of interleaved channels.
+    ///
+    /// # Returns
+    /// An analyzer with empty filter and envelope state.
     fn new(sample_rate: f32, channels: usize) -> Self {
         let coefficient =
             |cutoff: f32| 1.0 - (-2.0 * std::f32::consts::PI * cutoff / sample_rate).exp();
@@ -738,6 +913,15 @@ impl AudioBandAnalyzer {
         }
     }
 
+    /// Accumulates one packet into attack/release-smoothed band envelopes.
+    ///
+    /// # Arguments
+    /// * `format` - Decoder for the packet's mix format.
+    /// * `data` - Packet bytes, or `None` when Windows marks it silent.
+    /// * `frames` - Number of frames in the packet.
+    ///
+    /// # Side Effects
+    /// Advances filter history and envelope state.
     fn process(&mut self, format: &AudioMixFormat, data: Option<&[u8]>, frames: usize) {
         let mut bass_energy = 0.0;
         let mut mids_energy = 0.0;
@@ -766,11 +950,13 @@ impl AudioBandAnalyzer {
         }
 
         let divisor = (frames * format.channels) as f32;
+        // RMS energy is weighted per band to compensate for typical playback spectral balance.
         let targets = [
             (bass_energy / divisor).sqrt() * 4.4,
             (mids_energy / divisor).sqrt() * 3.6,
             (treble_energy / divisor).sqrt() * 5.4,
         ];
+        // Fast attack and slow release create responsive motion without visible flicker.
         let smooth = |current: f32, target: f32| {
             let amount = if target > current { 0.62 } else { 0.14 };
             current + (target.clamp(0.0, 1.0) - current) * amount
@@ -781,6 +967,10 @@ impl AudioBandAnalyzer {
         self.treble_envelope = smooth(self.treble_envelope, targets[2]);
     }
 
+    /// Copies the current normalized envelopes for lock-free publication.
+    ///
+    /// # Returns
+    /// The latest bass, mids, and treble energy.
     fn bands(&self) -> AudioBands {
         AudioBands {
             bass: self.bass_envelope,
@@ -836,6 +1026,10 @@ mod audio_band_tests {
 }
 
 #[cfg(target_os = "windows")]
+/// Lazily starts the shared Windows loopback capture worker.
+///
+/// # Side Effects
+/// Spawns one process-lifetime thread that activates capture only while requests are recent.
 fn start_audio_band_meter() {
     use std::{sync::atomic::Ordering, thread, time::Duration};
     use windows::Win32::{
@@ -847,6 +1041,7 @@ fn start_audio_band_meter() {
         System::Com::{CoCreateInstance, CoTaskMemFree, CLSCTX_ALL},
     };
 
+    // --- Worker Lifecycle ---
     AUDIO_METER_START.call_once(|| {
         let _ = thread::Builder::new()
             .name("control-panel-audio-meter".into())
@@ -858,6 +1053,7 @@ fn start_audio_band_meter() {
                 loop {
                     let idle_for = audio_meter_clock_ms()
                         .saturating_sub(AUDIO_LAST_REQUEST_MS.load(Ordering::Relaxed));
+                    // Release the audio device quickly when focus mode stops requesting samples.
                     if idle_for > 750 {
                         AUDIO_METER_READY.store(false, Ordering::Relaxed);
                         clear_audio_bands();
@@ -865,6 +1061,7 @@ fn start_audio_band_meter() {
                         continue;
                     }
 
+                    // --- Capture Session Setup ---
                     let capture = unsafe {
                         CoCreateInstance::<_, IMMDeviceEnumerator>(
                             &MMDeviceEnumerator,
@@ -908,6 +1105,7 @@ fn start_audio_band_meter() {
                         continue;
                     };
 
+                    // --- Packet Processing ---
                     let mut analyzer = AudioBandAnalyzer::new(format.sample_rate, format.channels);
                     AUDIO_METER_READY.store(true, Ordering::Relaxed);
                     loop {
@@ -968,6 +1166,13 @@ fn start_audio_band_meter() {
 }
 
 #[tauri::command]
+/// Returns the latest loopback-audio envelopes for focus-mode animation.
+///
+/// # Returns
+/// Normalized bands, or zeros while the lazy capture worker initializes.
+///
+/// # Errors
+/// Returns an error on platforms without the Windows capture implementation.
 fn get_system_audio_bands() -> Result<AudioBands, String> {
     #[cfg(target_os = "windows")]
     {
@@ -990,6 +1195,13 @@ fn get_system_audio_bands() -> Result<AudioBands, String> {
 }
 
 #[tauri::command]
+/// Reads the default Windows output endpoint's master volume.
+///
+/// # Returns
+/// The rounded volume percentage.
+///
+/// # Errors
+/// Returns an error when COM or the default endpoint is unavailable.
 fn get_system_volume() -> Result<u32, String> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -1005,6 +1217,16 @@ fn get_system_volume() -> Result<u32, String> {
 }
 
 #[tauri::command]
+/// Sets the default Windows output endpoint's master volume.
+///
+/// # Arguments
+/// * `level` - Requested percentage; values above 100 are clamped.
+///
+/// # Returns
+/// Success after Windows accepts the new scalar level.
+///
+/// # Errors
+/// Returns an error when COM or the endpoint-volume service is unavailable.
 fn set_system_volume(level: u32) -> Result<(), String> {
     let level = level.min(100);
 
@@ -1025,6 +1247,7 @@ fn set_system_volume(level: u32) -> Result<(), String> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Normalized battery state serialized to the header widget.
 struct BatteryStatus {
     level: Option<u8>,
     charging: bool,
@@ -1032,6 +1255,13 @@ struct BatteryStatus {
 }
 
 #[tauri::command]
+/// Reads the Windows aggregate battery and AC-power state.
+///
+/// # Returns
+/// Battery presence, charge state, and an optional percentage.
+///
+/// # Errors
+/// Returns an error when Windows power status cannot be read.
 fn get_battery_status() -> Result<BatteryStatus, String> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -1059,6 +1289,13 @@ fn get_battery_status() -> Result<BatteryStatus, String> {
 }
 
 #[tauri::command]
+/// Reads brightness from an internal WMI display or falls back to DDC/CI monitors.
+///
+/// # Returns
+/// The first controllable display's normalized brightness percentage.
+///
+/// # Errors
+/// Returns an error when neither display control path is available.
 fn get_system_brightness() -> Result<u32, String> {
     #[cfg(target_os = "windows")]
     {
@@ -1083,6 +1320,16 @@ fn get_system_brightness() -> Result<u32, String> {
 }
 
 #[tauri::command]
+/// Sets brightness through WMI, falling back to all DDC/CI-capable monitors.
+///
+/// # Arguments
+/// * `level` - Requested percentage; values above 100 are clamped.
+///
+/// # Returns
+/// Success when at least one supported display accepts the change.
+///
+/// # Errors
+/// Returns an error when neither internal nor external display control succeeds.
 fn set_system_brightness(level: u32) -> Result<(), String> {
     let level = level.min(100);
 
@@ -1105,6 +1352,10 @@ fn set_system_brightness(level: u32) -> Result<(), String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Enumerates logical Windows monitors for subsequent physical-monitor discovery.
+///
+/// # Returns
+/// Every monitor handle reported by GDI.
 fn logical_monitors() -> Vec<windows::Win32::Graphics::Gdi::HMONITOR> {
     use windows::{
         core::BOOL,
@@ -1134,12 +1385,20 @@ fn logical_monitors() -> Vec<windows::Win32::Graphics::Gdi::HMONITOR> {
 }
 
 #[cfg(target_os = "windows")]
+/// Reads brightness from the first physical monitor that supports DDC/CI.
+///
+/// # Returns
+/// Brightness normalized from the monitor's device-specific range.
+///
+/// # Errors
+/// Returns an error when no enumerated display exposes brightness controls.
 fn get_external_monitor_brightness() -> Result<u32, String> {
     use windows::Win32::Devices::Display::{
         DestroyPhysicalMonitors, GetMonitorBrightness, GetNumberOfPhysicalMonitorsFromHMONITOR,
         GetPhysicalMonitorsFromHMONITOR, PHYSICAL_MONITOR,
     };
 
+    // --- Physical Monitor Discovery ---
     unsafe {
         for logical in logical_monitors() {
             let mut count = 0_u32;
@@ -1184,12 +1443,23 @@ fn get_external_monitor_brightness() -> Result<u32, String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Applies a normalized brightness level to every DDC/CI-capable physical monitor.
+///
+/// # Arguments
+/// * `level` - Percentage already constrained to `0..=100`.
+///
+/// # Returns
+/// Success when at least one physical monitor changes.
+///
+/// # Errors
+/// Returns an error when no display accepts the request.
 fn set_external_monitor_brightness(level: u32) -> Result<(), String> {
     use windows::Win32::Devices::Display::{
         DestroyPhysicalMonitors, GetMonitorBrightness, GetNumberOfPhysicalMonitorsFromHMONITOR,
         GetPhysicalMonitorsFromHMONITOR, SetMonitorBrightness, PHYSICAL_MONITOR,
     };
 
+    // --- Physical Monitor Updates ---
     let mut changed = 0_u32;
     unsafe {
         for logical in logical_monitors() {
@@ -1233,6 +1503,7 @@ fn set_external_monitor_brightness(level: u32) -> Result<(), String> {
 }
 
 #[derive(Serialize)]
+/// Utilization percentages returned to the system-vitals widget.
 struct SystemMetrics {
     cpu: u32,
     ram: u32,
@@ -1245,6 +1516,13 @@ fn filetime_value(time: windows::Win32::Foundation::FILETIME) -> u64 {
 }
 
 #[cfg(target_os = "windows")]
+/// Samples Windows aggregate CPU counters over a short interval.
+///
+/// # Returns
+/// Rounded non-idle processor time as a percentage.
+///
+/// # Errors
+/// Returns an error when either system-time sample cannot be read.
 fn read_cpu_usage() -> Result<u32, String> {
     use std::{thread::sleep, time::Duration};
     use windows::Win32::{Foundation::FILETIME, System::Threading::GetSystemTimes};
@@ -1262,6 +1540,7 @@ fn read_cpu_usage() -> Result<u32, String> {
         ))
     }
 
+    // A delta is required because Windows exposes cumulative CPU times, not instantaneous load.
     let before = unsafe { sample()? };
     sleep(Duration::from_millis(120));
     let after = unsafe { sample()? };
@@ -1281,12 +1560,20 @@ fn read_cpu_usage() -> Result<u32, String> {
 }
 
 #[tauri::command]
+/// Collects CPU, memory, and best-effort GPU utilization for the dashboard.
+///
+/// # Returns
+/// Current system metrics; GPU is `None` when Windows exposes no usable counter.
+///
+/// # Errors
+/// Returns an error when required CPU or memory counters cannot be read.
 fn get_system_metrics() -> Result<SystemMetrics, String> {
     #[cfg(target_os = "windows")]
     unsafe {
         use std::mem::size_of;
         use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 
+        // --- Required CPU and Memory Counters ---
         let cpu = read_cpu_usage()?;
         let mut memory = MEMORYSTATUSEX {
             dwLength: size_of::<MEMORYSTATUSEX>() as u32,
@@ -1295,6 +1582,7 @@ fn get_system_metrics() -> Result<SystemMetrics, String> {
         GlobalMemoryStatusEx(&mut memory)
             .map_err(|error| command_error("Memory usage could not be read", error))?;
 
+        // --- Best-Effort GPU Counter ---
         let gpu_script = "$samples=Get-CimInstance Win32_PerfFormattedData_GPUPerformanceCounters_GPUEngine -ErrorAction SilentlyContinue; if($samples){[math]::Round(($samples | Measure-Object -Property UtilizationPercentage -Sum).Sum)}else{$counter=(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples; if($counter){$groups=$counter | Group-Object { $_.InstanceName -replace '^pid_\\d+_','' }; $loads=$groups | ForEach-Object { ($_.Group | Measure-Object -Property CookedValue -Sum).Sum }; [math]::Round(($loads | Measure-Object -Maximum).Maximum)}}";
         let gpu = powershell_output(gpu_script)
             .ok()
@@ -1313,6 +1601,16 @@ fn get_system_metrics() -> Result<SystemMetrics, String> {
 }
 
 #[tauri::command]
+/// Emits an allowlisted Windows media-key press and release pair.
+///
+/// # Arguments
+/// * `action` - One of `play_pause`, `stop`, `next`, or `previous`.
+///
+/// # Returns
+/// Success when Windows accepts both synthetic input events.
+///
+/// # Errors
+/// Returns an error for unsupported actions or incomplete input injection.
 fn media_control(action: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     unsafe {
@@ -1373,6 +1671,7 @@ struct RawOpenApplication {
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Frontend-safe process metadata with force-close protection details.
 struct OpenApplication {
     pid: u32,
     name: String,
@@ -1381,6 +1680,14 @@ struct OpenApplication {
     protected_reason: Option<String>,
 }
 
+/// Determines whether the control panel should refuse to terminate a visible process.
+///
+/// # Arguments
+/// * `pid` - Process identifier under consideration.
+/// * `name` - Windows process name, with or without `.exe`.
+///
+/// # Returns
+/// A user-facing protection reason, or `None` when termination is permitted.
 fn application_protection(pid: u32, name: &str) -> Option<String> {
     if pid == std::process::id() {
         return Some("Control Panel stays open while you manage other apps".into());
@@ -1404,15 +1711,24 @@ fn application_protection(pid: u32, name: &str) -> Option<String> {
 }
 
 #[tauri::command]
+/// Lists visible top-level Windows applications with force-close safety metadata.
+///
+/// # Returns
+/// A title-sorted snapshot of applications that own visible windows.
+///
+/// # Errors
+/// Returns an error when PowerShell enumeration or JSON parsing fails.
 fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
     #[cfg(target_os = "windows")]
     {
+        // --- Visible Window Snapshot ---
         let script = r#"[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $apps=@(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } | ForEach-Object { [pscustomobject]@{ pid=[uint32]$_.Id; name=$_.ProcessName; title=$_.MainWindowTitle } }); ConvertTo-Json -InputObject $apps -Compress"#;
         let output = powershell_output(script)?;
         if output.is_empty() {
             return Ok(Vec::new());
         }
 
+        // --- Protection and Stable Ordering ---
         let mut applications = serde_json::from_str::<Vec<RawOpenApplication>>(&output)
             .map_err(|error| command_error("Open applications could not be parsed", error))?
             .into_iter()
@@ -1442,13 +1758,25 @@ fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
 }
 
 #[tauri::command]
+/// Force-terminates an eligible visible application and its child process tree.
+///
+/// # Arguments
+/// * `pid` - Identifier selected from a fresh application snapshot.
+///
+/// # Returns
+/// Success after `taskkill` confirms termination.
+///
+/// # Errors
+/// Returns an error for stale, protected, unsupported, or failed termination requests.
 fn force_close_application(pid: u32) -> Result<(), String> {
+    // --- Request Validation ---
     if pid == 0 {
         return Err("That application is no longer available".into());
     }
 
     #[cfg(target_os = "windows")]
     {
+        // Re-read protection server-side so a stale or forged frontend row cannot bypass policy.
         let application = list_open_applications()?
             .into_iter()
             .find(|application| application.pid == pid)
@@ -1457,6 +1785,7 @@ fn force_close_application(pid: u32) -> Result<(), String> {
             return Err(reason);
         }
 
+        // --- Process-Tree Termination ---
         let pid_value = pid.to_string();
         let output = hidden_command("taskkill.exe")
             .args(["/PID", &pid_value, "/T", "/F"])
@@ -1484,6 +1813,16 @@ fn force_close_application(pid: u32) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// Minimizes the primary Tauri webview window.
+///
+/// # Arguments
+/// * `app` - Handle used to resolve the `main` window.
+///
+/// # Returns
+/// Success after the window manager accepts the request.
+///
+/// # Errors
+/// Returns an error when the window is absent or cannot be minimized.
 fn minimize_main_window(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
@@ -1494,6 +1833,16 @@ fn minimize_main_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+/// Closes the primary Tauri webview window.
+///
+/// # Arguments
+/// * `app` - Handle used to resolve the `main` window.
+///
+/// # Returns
+/// Success after the close request is accepted.
+///
+/// # Errors
+/// Returns an error when the window is absent or cannot be closed.
 fn close_main_window(app: tauri::AppHandle) -> Result<(), String> {
     let window = app
         .get_webview_window("main")
@@ -1504,6 +1853,10 @@ fn close_main_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Builds the desktop runtime, installs plugins, and registers the frontend command boundary.
+///
+/// # Side Effects
+/// Starts the Tauri event loop and terminates the process if runtime initialization fails.
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())

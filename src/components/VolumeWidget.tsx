@@ -5,6 +5,11 @@ import { errorMessage, isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
 import { WidgetFrame } from "./WidgetFrame";
 
+/**
+ * Selects a volume glyph using thresholds that remain legible at widget scale.
+ * @param props - The current system volume percentage.
+ * @returns A muted, low-volume, or full-volume glyph.
+ */
 function VolumeGlyph({ level }: { level: number }) {
   if (level === 0) return <VolumeX size={19} strokeWidth={1.7} />;
   if (level < 45) return <Volume1 size={19} strokeWidth={1.7} />;
@@ -19,6 +24,11 @@ type ControlRailProps = {
   onChange: (value: number) => void;
 };
 
+/**
+ * Renders a labeled percentage control shared by volume and brightness.
+ * @param props - The control label, value, icon, availability, and change callback.
+ * @returns An accessible range control with a numeric readout.
+ */
 function ControlRail({ label, value, icon, disabled = false, onChange }: ControlRailProps) {
   return (
     <div className={disabled ? "opacity-45" : undefined}>
@@ -49,7 +59,13 @@ function ControlRail({ label, value, icon, disabled = false, onChange }: Control
   );
 }
 
+/**
+ * Coordinates optimistic volume and brightness controls with the Windows backend.
+ * @returns The combined audio and display control widget.
+ * @remarks Side effects: reads and writes native system settings through Tauri commands.
+ */
 export function VolumeWidget() {
+  // --- Control State and Initial Read ---
   const [volume, setVolume] = useState(42);
   const [brightness, setBrightness] = useState(62);
   const [brightnessAvailable, setBrightnessAvailable] = useState(true);
@@ -87,15 +103,30 @@ export function VolumeWidget() {
     };
   }, []);
 
+  // --- Debounced Native Writes ---
+
+  /**
+   * Applies volume optimistically and coalesces rapid slider events.
+   * @param next - The requested volume percentage.
+   * @returns Nothing.
+   * @remarks Side effects: updates local state and schedules a native volume write.
+   */
   const changeVolume = (next: number) => {
     setVolume(next);
     if (!isTauriRuntime()) return;
     if (volumeTimer.current) window.clearTimeout(volumeTimer.current);
+    // Debouncing keeps native COM traffic bounded while the range thumb is dragged.
     volumeTimer.current = window.setTimeout(() => {
       void invoke("set_system_volume", { level: next }).catch((error: unknown) => setStatus(errorMessage(error)));
     }, 80);
   };
 
+  /**
+   * Applies brightness optimistically and coalesces rapid slider events.
+   * @param next - The requested brightness percentage.
+   * @returns Nothing.
+   * @remarks Side effects: updates local state and schedules a native display write.
+   */
   const changeBrightness = (next: number) => {
     setBrightness(next);
     if (!isTauriRuntime()) return;
@@ -107,6 +138,7 @@ export function VolumeWidget() {
     }, 180);
   };
 
+  // --- Widget Rendering ---
   return (
     <WidgetFrame
       title="Audio and display"

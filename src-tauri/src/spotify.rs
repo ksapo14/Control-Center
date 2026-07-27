@@ -43,6 +43,7 @@ struct TokenResponse {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Spotify client configuration and authorization state exposed to the frontend.
 pub(crate) struct SpotifyStatus {
     configured: bool,
     connected: bool,
@@ -50,6 +51,7 @@ pub(crate) struct SpotifyStatus {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+/// Normalized playback metadata used by the Spotify dashboard deck.
 pub(crate) struct SpotifyPlayback {
     connected: bool,
     is_playing: bool,
@@ -68,6 +70,16 @@ fn now_epoch() -> Result<u64, String> {
         .map_err(|error| format!("The system clock is unavailable: {error}"))
 }
 
+/// Resolves and creates the application-specific configuration directory.
+///
+/// # Arguments
+/// * `app` - Tauri handle used for platform-aware path resolution.
+///
+/// # Returns
+/// The writable configuration directory.
+///
+/// # Errors
+/// Returns an error when the path cannot be resolved or created.
 fn app_config_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let directory = app
         .path()
@@ -86,6 +98,16 @@ fn token_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_config_dir(app)?.join(TOKEN_FILE))
 }
 
+/// Loads the saved public Spotify client configuration.
+///
+/// # Arguments
+/// * `app` - Handle used to resolve storage.
+///
+/// # Returns
+/// The configured client ID.
+///
+/// # Errors
+/// Returns an error when configuration is absent, unreadable, or invalid.
 fn load_client(app: &tauri::AppHandle) -> Result<SpotifyClientConfig, String> {
     let contents = fs::read_to_string(client_path(app)?).map_err(|_| {
         "Spotify is not configured yet. Enter the Client ID from your Spotify developer app"
@@ -96,6 +118,16 @@ fn load_client(app: &tauri::AppHandle) -> Result<SpotifyClientConfig, String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Encrypts Spotify OAuth tokens for the current Windows user with DPAPI.
+///
+/// # Arguments
+/// * `data` - Plaintext token bytes.
+///
+/// # Returns
+/// DPAPI-protected bytes.
+///
+/// # Errors
+/// Returns an error when Windows cannot protect the token.
 fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::{
         Foundation::{LocalFree, HLOCAL},
@@ -125,6 +157,16 @@ fn protect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(target_os = "windows")]
+/// Decrypts Spotify OAuth tokens protected for the current Windows user.
+///
+/// # Arguments
+/// * `data` - DPAPI-protected token bytes.
+///
+/// # Returns
+/// The recovered plaintext bytes.
+///
+/// # Errors
+/// Returns an error when Windows cannot unlock the token.
 fn unprotect_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
     use windows::Win32::{
         Foundation::{LocalFree, HLOCAL},
@@ -165,6 +207,17 @@ fn unprotect_bytes(_data: &[u8]) -> Result<Vec<u8>, String> {
     Err("Secure Spotify token storage is currently configured for Windows".into())
 }
 
+/// Saves the Spotify OAuth session in DPAPI-protected storage.
+///
+/// # Arguments
+/// * `app` - Handle used to resolve storage.
+/// * `tokens` - Access, refresh, and expiry values to persist.
+///
+/// # Returns
+/// Success after the protected token file is written.
+///
+/// # Errors
+/// Returns an error when serialization, encryption, or writing fails.
 fn save_tokens(app: &tauri::AppHandle, tokens: &StoredTokens) -> Result<(), String> {
     let serialized = serde_json::to_vec(tokens)
         .map_err(|error| format!("The Spotify token could not be prepared: {error}"))?;
@@ -191,12 +244,27 @@ fn remove_tokens(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Generates cryptographically random, URL-safe OAuth material.
+///
+/// # Arguments
+/// * `byte_count` - Number of random bytes before Base64URL encoding.
+///
+/// # Returns
+/// An unpadded Base64URL string.
 fn random_urlsafe(byte_count: usize) -> String {
     let mut bytes = vec![0_u8; byte_count];
     OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(bytes)
 }
 
+/// Converts Spotify error payloads and common playback statuses into actionable messages.
+///
+/// # Arguments
+/// * `response` - Unsuccessful HTTP response to consume.
+/// * `context` - Operation-specific prefix.
+///
+/// # Returns
+/// The best available Spotify error description with device guidance when relevant.
 fn response_error(response: reqwest::blocking::Response, context: &str) -> String {
     let status = response.status();
     let body = response.text().unwrap_or_default();
@@ -225,6 +293,14 @@ fn response_error(response: reqwest::blocking::Response, context: &str) -> Strin
     }
 }
 
+/// Sends a minimal completion page to the temporary OAuth callback connection.
+///
+/// # Arguments
+/// * `stream` - Browser TCP connection accepted by the loopback listener.
+/// * `success` - Whether authorization completed successfully.
+///
+/// # Side Effects
+/// Writes and flushes an HTTP response; browser disconnect errors are intentionally ignored.
 fn send_browser_response(stream: &mut std::net::TcpStream, success: bool) {
     let (title, message, color) = if success {
         (
@@ -250,7 +326,18 @@ fn send_browser_response(stream: &mut std::net::TcpStream, success: bool) {
     let _ = stream.flush();
 }
 
+/// Runs the blocking PKCE browser authorization and persists the resulting token set.
+///
+/// # Arguments
+/// * `app` - Handle used for browser launch and protected storage.
+///
+/// # Returns
+/// Connected Spotify status.
+///
+/// # Errors
+/// Returns an error for listener, browser, callback, token-exchange, or storage failures.
 fn connect_blocking(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
+    // --- Loopback Callback Setup ---
     let config = load_client(&app)?;
     let listener = TcpListener::bind("127.0.0.1:0")
         .map_err(|error| format!("The local Spotify sign-in callback could not start: {error}"))?;
@@ -266,6 +353,7 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
     let state = random_urlsafe(32);
 
+    // --- PKCE Authorization Request ---
     let mut authorization_url = Url::parse("https://accounts.spotify.com/authorize")
         .map_err(|error| format!("The Spotify authorization URL is invalid: {error}"))?;
     authorization_url
@@ -287,7 +375,9 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
     #[cfg(not(target_os = "windows"))]
     return Err("Spotify sign-in is currently configured for Windows".into());
 
+    // --- Browser Callback Validation ---
     let deadline = Instant::now() + Duration::from_secs(180);
+    // The loopback listener remains bounded so abandoned browser flows cannot block a worker forever.
     let code = loop {
         if Instant::now() >= deadline {
             return Err(
@@ -337,6 +427,7 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
         }
     };
 
+    // --- Authorization-Code Exchange ---
     let client = Client::builder()
         .timeout(Duration::from_secs(30))
         .build()
@@ -375,6 +466,17 @@ fn connect_blocking(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
     })
 }
 
+/// Refreshes an expired Spotify session and persists rotated token values.
+///
+/// # Arguments
+/// * `app` - Handle used for client configuration and token storage.
+/// * `tokens` - Existing OAuth session.
+///
+/// # Returns
+/// The original tokens when still valid, otherwise the refreshed set.
+///
+/// # Errors
+/// Returns an error when configuration, refresh, parsing, or storage fails.
 fn refresh_tokens(
     app: &tauri::AppHandle,
     mut tokens: StoredTokens,
@@ -417,10 +519,34 @@ fn refresh_tokens(
     Ok(tokens)
 }
 
+/// Returns a usable Spotify bearer token, refreshing the saved session when needed.
+///
+/// # Arguments
+/// * `app` - Handle used to load and persist OAuth state.
+///
+/// # Returns
+/// A current access token.
+///
+/// # Errors
+/// Returns an error when the session is missing or cannot be refreshed.
 fn access_token(app: &tauri::AppHandle) -> Result<String, String> {
     refresh_tokens(app, load_tokens(app)?).map(|tokens| tokens.access_token)
 }
 
+/// Sends one authenticated Spotify Web API request with consistent response handling.
+///
+/// # Arguments
+/// * `app` - Handle used to obtain an access token.
+/// * `method` - HTTP method required by the endpoint.
+/// * `endpoint` - API path relative to `/v1`.
+/// * `body` - Optional JSON request body.
+/// * `context` - Operation-specific error prefix.
+///
+/// # Returns
+/// Parsed JSON, or `None` for successful no-content responses.
+///
+/// # Errors
+/// Returns an error for authentication, transport, API, or JSON failures.
 fn spotify_request(
     app: &tauri::AppHandle,
     method: Method,
@@ -457,6 +583,16 @@ fn spotify_request(
 }
 
 #[tauri::command]
+/// Reports whether a Spotify client ID and OAuth session are locally available.
+///
+/// # Arguments
+/// * `app` - Handle used to inspect application storage.
+///
+/// # Returns
+/// Current configuration and connection flags.
+///
+/// # Errors
+/// Returns an error only when application storage paths cannot be resolved.
 pub(crate) fn get_spotify_status(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
     let configured = client_path(&app)?.is_file();
     let connected = configured && load_tokens(&app).is_ok();
@@ -467,6 +603,20 @@ pub(crate) fn get_spotify_status(app: tauri::AppHandle) -> Result<SpotifyStatus,
 }
 
 #[tauri::command]
+/// Validates and saves a public Spotify client ID for PKCE authorization.
+///
+/// # Arguments
+/// * `app` - Handle used for configuration storage.
+/// * `client_id` - Client ID copied from the Spotify developer dashboard.
+///
+/// # Returns
+/// Configured but disconnected Spotify status.
+///
+/// # Errors
+/// Returns an error for malformed IDs or failed persistence.
+///
+/// # Side Effects
+/// Replaces configuration and removes any session tied to the previous client.
 pub(crate) fn configure_spotify(
     app: tauri::AppHandle,
     client_id: String,
@@ -496,6 +646,16 @@ pub(crate) fn configure_spotify(
 }
 
 #[tauri::command]
+/// Runs Spotify browser authorization on a blocking worker thread.
+///
+/// # Arguments
+/// * `app` - Handle moved into the authorization workflow.
+///
+/// # Returns
+/// Connected Spotify status.
+///
+/// # Errors
+/// Returns authorization errors or an unexpected worker-task failure.
 pub(crate) async fn connect_spotify(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
     tauri::async_runtime::spawn_blocking(move || connect_blocking(app))
         .await
@@ -503,6 +663,16 @@ pub(crate) async fn connect_spotify(app: tauri::AppHandle) -> Result<SpotifyStat
 }
 
 #[tauri::command]
+/// Removes the local Spotify OAuth session while retaining client configuration.
+///
+/// # Arguments
+/// * `app` - Handle used for token storage.
+///
+/// # Returns
+/// Disconnected status with the remaining configuration flag.
+///
+/// # Errors
+/// Returns an error when the token file cannot be removed.
 pub(crate) fn disconnect_spotify(app: tauri::AppHandle) -> Result<SpotifyStatus, String> {
     remove_tokens(&app)?;
     Ok(SpotifyStatus {
@@ -512,8 +682,19 @@ pub(crate) fn disconnect_spotify(app: tauri::AppHandle) -> Result<SpotifyStatus,
 }
 
 #[tauri::command]
+/// Reads normalized playback state on a blocking worker thread.
+///
+/// # Arguments
+/// * `app` - Handle used for authenticated API access.
+///
+/// # Returns
+/// Current track, device, timing, and play-state metadata.
+///
+/// # Errors
+/// Returns authentication, API, parsing, or worker-task errors.
 pub(crate) async fn get_spotify_playback(app: tauri::AppHandle) -> Result<SpotifyPlayback, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        // --- Playback Resource Request ---
         let response = spotify_request(
             &app,
             Method::GET,
@@ -533,6 +714,7 @@ pub(crate) async fn get_spotify_playback(app: tauri::AppHandle) -> Result<Spotif
                 duration_ms: 0,
             });
         };
+        // --- Frontend Playback Model ---
         let item = value.get("item");
         let artists = item
             .and_then(|item| item.get("artists"))
@@ -579,6 +761,17 @@ pub(crate) async fn get_spotify_playback(app: tauri::AppHandle) -> Result<Spotif
 }
 
 #[tauri::command]
+/// Starts an allowlisted Spotify collection on the active Connect device.
+///
+/// # Arguments
+/// * `app` - Handle used for authenticated API access.
+/// * `context_uri` - Playlist, album, or artist URI.
+///
+/// # Returns
+/// Success after Spotify accepts the playback request.
+///
+/// # Errors
+/// Returns an error for disallowed URI types or API and worker failures.
 pub(crate) async fn spotify_play_context(
     app: tauri::AppHandle,
     context_uri: String,
@@ -604,6 +797,17 @@ pub(crate) async fn spotify_play_context(
 }
 
 #[tauri::command]
+/// Dispatches an allowlisted Spotify transport action on the active device.
+///
+/// # Arguments
+/// * `app` - Handle used for authenticated API access.
+/// * `action` - One of `play`, `pause`, `next`, or `previous`.
+///
+/// # Returns
+/// Success after Spotify accepts the command.
+///
+/// # Errors
+/// Returns an error for unsupported actions or API and worker failures.
 pub(crate) async fn spotify_playback_action(
     app: tauri::AppHandle,
     action: String,
