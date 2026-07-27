@@ -116,6 +116,11 @@ fn launch_app(app_name: String) -> Result<(), String> {
                 }
             }
             "ChatGPT (Beta)" => launch_start_app(&["ChatGPT (Beta)", "ChatGPT"]),
+            "NeatNotes" => Command::new("explorer.exe")
+                .arg("shell:AppsFolder\\StameSoftwares.NeatNotes_vas53b8yfkk7r!App")
+                .spawn()
+                .map(|_| ())
+                .map_err(|error| command_error("NeatNotes could not be launched", error)),
             _ => Err("That application is not on the control panel allowlist".into()),
         };
     }
@@ -124,6 +129,34 @@ fn launch_app(app_name: String) -> Result<(), String> {
     {
         let _ = app_name;
         Err("Application launching is currently configured for Windows".into())
+    }
+}
+
+#[tauri::command]
+fn launch_chrome_site(site: String) -> Result<(), String> {
+    let url = match site.as_str() {
+        "youtube" => "https://www.youtube.com/",
+        "github" => "https://github.com/",
+        "gemini" => "https://gemini.google.com/",
+        _ => return Err("That website is not on the control panel allowlist".into()),
+    };
+
+    #[cfg(target_os = "windows")]
+    {
+        let executable = chrome_executable().ok_or_else(|| {
+            "Google Chrome was not found in a standard install location".to_string()
+        })?;
+        return Command::new(executable)
+            .arg(url)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| command_error("Chrome could not open the website", error));
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = url;
+        Err("Chrome website launching is currently configured for Windows".into())
     }
 }
 
@@ -632,56 +665,56 @@ impl AudioMixFormat {
         })
     }
 
-    fn mono_sample(&self, data: &[u8], frame: usize) -> f32 {
+    fn channel_sample(&self, data: &[u8], frame: usize, channel: usize) -> f32 {
         let frame_start = frame * self.block_align;
-        let mut total = 0.0;
-        for channel in 0..self.channels {
-            let offset = frame_start + channel * self.bytes_per_sample;
-            let sample = match self.encoding {
-                AudioSampleEncoding::Float32 => {
-                    let bytes = [
-                        data[offset],
-                        data[offset + 1],
-                        data[offset + 2],
-                        data[offset + 3],
-                    ];
-                    f32::from_le_bytes(bytes)
-                }
-                AudioSampleEncoding::Pcm16 => {
-                    let bytes = [data[offset], data[offset + 1]];
-                    f32::from(i16::from_le_bytes(bytes)) / 32_768.0
-                }
-                AudioSampleEncoding::Pcm24 => {
-                    let raw = i32::from(data[offset])
-                        | (i32::from(data[offset + 1]) << 8)
-                        | (i32::from(data[offset + 2]) << 16);
-                    let signed = if raw & 0x0080_0000 != 0 {
-                        raw | !0x00ff_ffff
-                    } else {
-                        raw
-                    };
-                    signed as f32 / 8_388_608.0
-                }
-                AudioSampleEncoding::Pcm32 => {
-                    let bytes = [
-                        data[offset],
-                        data[offset + 1],
-                        data[offset + 2],
-                        data[offset + 3],
-                    ];
-                    i32::from_le_bytes(bytes) as f32 / 2_147_483_648.0
-                }
-            };
-            total += if sample.is_finite() { sample } else { 0.0 };
+        let offset = frame_start + channel * self.bytes_per_sample;
+        let sample = match self.encoding {
+            AudioSampleEncoding::Float32 => {
+                let bytes = [
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                ];
+                f32::from_le_bytes(bytes)
+            }
+            AudioSampleEncoding::Pcm16 => {
+                let bytes = [data[offset], data[offset + 1]];
+                f32::from(i16::from_le_bytes(bytes)) / 32_768.0
+            }
+            AudioSampleEncoding::Pcm24 => {
+                let raw = i32::from(data[offset])
+                    | (i32::from(data[offset + 1]) << 8)
+                    | (i32::from(data[offset + 2]) << 16);
+                let signed = if raw & 0x0080_0000 != 0 {
+                    raw | !0x00ff_ffff
+                } else {
+                    raw
+                };
+                signed as f32 / 8_388_608.0
+            }
+            AudioSampleEncoding::Pcm32 => {
+                let bytes = [
+                    data[offset],
+                    data[offset + 1],
+                    data[offset + 2],
+                    data[offset + 3],
+                ];
+                i32::from_le_bytes(bytes) as f32 / 2_147_483_648.0
+            }
+        };
+        if sample.is_finite() {
+            sample
+        } else {
+            0.0
         }
-        total / self.channels as f32
     }
 }
 
 #[cfg(target_os = "windows")]
 struct AudioBandAnalyzer {
-    low_state: f32,
-    high_state: f32,
+    low_states: Vec<f32>,
+    high_states: Vec<f32>,
     bass_envelope: f32,
     mids_envelope: f32,
     treble_envelope: f32,
@@ -691,12 +724,12 @@ struct AudioBandAnalyzer {
 
 #[cfg(target_os = "windows")]
 impl AudioBandAnalyzer {
-    fn new(sample_rate: f32) -> Self {
+    fn new(sample_rate: f32, channels: usize) -> Self {
         let coefficient =
             |cutoff: f32| 1.0 - (-2.0 * std::f32::consts::PI * cutoff / sample_rate).exp();
         Self {
-            low_state: 0.0,
-            high_state: 0.0,
+            low_states: vec![0.0; channels],
+            high_states: vec![0.0; channels],
             bass_envelope: 0.0,
             mids_envelope: 0.0,
             treble_envelope: 0.0,
@@ -711,23 +744,28 @@ impl AudioBandAnalyzer {
         let mut treble_energy = 0.0;
 
         for frame in 0..frames {
-            let sample = data.map_or(0.0, |buffer| format.mono_sample(buffer, frame));
-            self.low_state += self.low_coefficient * (sample - self.low_state);
-            self.high_state += self.high_coefficient * (sample - self.high_state);
+            for channel in 0..format.channels {
+                let sample =
+                    data.map_or(0.0, |buffer| format.channel_sample(buffer, frame, channel));
+                self.low_states[channel] +=
+                    self.low_coefficient * (sample - self.low_states[channel]);
+                self.high_states[channel] +=
+                    self.high_coefficient * (sample - self.high_states[channel]);
 
-            let bass = self.low_state;
-            let mids = self.high_state - self.low_state;
-            let treble = sample - self.high_state;
-            bass_energy += bass * bass;
-            mids_energy += mids * mids;
-            treble_energy += treble * treble;
+                let bass = self.low_states[channel];
+                let mids = self.high_states[channel] - self.low_states[channel];
+                let treble = sample - self.high_states[channel];
+                bass_energy += bass * bass;
+                mids_energy += mids * mids;
+                treble_energy += treble * treble;
+            }
         }
 
         if frames == 0 {
             return;
         }
 
-        let divisor = frames as f32;
+        let divisor = (frames * format.channels) as f32;
         let targets = [
             (bass_energy / divisor).sqrt() * 4.4,
             (mids_energy / divisor).sqrt() * 3.6,
@@ -752,12 +790,57 @@ impl AudioBandAnalyzer {
     }
 }
 
+#[cfg(all(test, target_os = "windows"))]
+mod audio_band_tests {
+    use super::*;
+
+    fn analyze_frequency(frequency: f32) -> AudioBands {
+        const SAMPLE_RATE: f32 = 48_000.0;
+        const FRAMES_PER_CHUNK: usize = 480;
+        let format = AudioMixFormat {
+            sample_rate: SAMPLE_RATE,
+            channels: 2,
+            block_align: 8,
+            bytes_per_sample: 4,
+            encoding: AudioSampleEncoding::Float32,
+        };
+        let mut analyzer = AudioBandAnalyzer::new(SAMPLE_RATE, format.channels);
+
+        for chunk in 0..20 {
+            let mut samples = Vec::with_capacity(FRAMES_PER_CHUNK * format.block_align);
+            for frame in 0..FRAMES_PER_CHUNK {
+                let index = chunk * FRAMES_PER_CHUNK + frame;
+                let left = (2.0 * std::f32::consts::PI * frequency * index as f32 / SAMPLE_RATE)
+                    .sin()
+                    * 0.15;
+                samples.extend_from_slice(&left.to_le_bytes());
+                samples.extend_from_slice(&(-left).to_le_bytes());
+            }
+            analyzer.process(&format, Some(&samples), FRAMES_PER_CHUNK);
+        }
+
+        analyzer.bands()
+    }
+
+    #[test]
+    fn separates_bass_mids_and_treble_without_stereo_cancellation() {
+        let bass = analyze_frequency(80.0);
+        assert!(bass.bass > bass.mids && bass.bass > bass.treble);
+
+        let mids = analyze_frequency(1_000.0);
+        assert!(mids.mids > mids.bass && mids.mids > mids.treble);
+
+        let treble = analyze_frequency(10_000.0);
+        assert!(treble.treble > treble.bass && treble.treble > treble.mids);
+    }
+}
+
 #[cfg(target_os = "windows")]
 fn start_audio_band_meter() {
     use std::{sync::atomic::Ordering, thread, time::Duration};
     use windows::Win32::{
         Media::Audio::{
-            eConsole, eRender, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator,
+            eMultimedia, eRender, IAudioCaptureClient, IAudioClient, IMMDeviceEnumerator,
             MMDeviceEnumerator, AUDCLNT_BUFFERFLAGS_SILENT, AUDCLNT_SHAREMODE_SHARED,
             AUDCLNT_STREAMFLAGS_LOOPBACK,
         },
@@ -789,7 +872,7 @@ fn start_audio_band_meter() {
                             CLSCTX_ALL,
                         )
                         .and_then(|enumerator| {
-                            enumerator.GetDefaultAudioEndpoint(eRender, eConsole)
+                            enumerator.GetDefaultAudioEndpoint(eRender, eMultimedia)
                         })
                         .and_then(|device| device.Activate::<IAudioClient>(CLSCTX_ALL, None))
                         .and_then(|client| {
@@ -825,7 +908,7 @@ fn start_audio_band_meter() {
                         continue;
                     };
 
-                    let mut analyzer = AudioBandAnalyzer::new(format.sample_rate);
+                    let mut analyzer = AudioBandAnalyzer::new(format.sample_rate, format.channels);
                     AUDIO_METER_READY.store(true, Ordering::Relaxed);
                     loop {
                         let idle_for = audio_meter_clock_ms()
@@ -1427,6 +1510,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .invoke_handler(tauri::generate_handler![
             launch_app,
+            launch_chrome_site,
             open_vscode_directory,
             connect_bluetooth_device,
             disconnect_bluetooth_device,
