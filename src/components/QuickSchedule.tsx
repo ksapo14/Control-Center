@@ -357,6 +357,7 @@ export function QuickSchedule() {
         className="h-9 px-2.5 sm:px-3"
         aria-haspopup="dialog"
         data-shortcut-combo="Control+Alt+KeyS"
+        data-shortcut-id="control:quick-schedule"
         data-shortcut-label="Open Quick Schedule"
         data-shortcut-detail="Create a calendar event"
         data-shortcut-group="Control panel"

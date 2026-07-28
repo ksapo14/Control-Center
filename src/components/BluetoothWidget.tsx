@@ -25,9 +25,18 @@ export function BluetoothWidget() {
   const [detail, setDetail] = useState("Ready for quick-connect");
   const previewTimer = useRef<number>();
   const connectionRef = useRef(connection);
+  const automationConnectionRef = useRef<ConnectionState | null>(null);
 
   useEffect(() => {
     connectionRef.current = connection;
+    if (connection === "connected" && automationConnectionRef.current !== "connected") {
+      window.dispatchEvent(
+        new CustomEvent("control-panel:automation-trigger", {
+          detail: { trigger: "bluetooth" },
+        }),
+      );
+    }
+    automationConnectionRef.current = connection;
   }, [connection]);
 
   useEffect(() => {

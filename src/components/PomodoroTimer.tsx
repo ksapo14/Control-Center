@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
 import { useDashboardCustomization } from "./DashboardCustomization";
-import { HiddenWidgetTile, WidgetVisibilityButton } from "./WidgetFrame";
+import { HiddenWidgetTile, WidgetEditControls, WidgetVisibilityButton } from "./WidgetFrame";
 
 const DEFAULT_SECONDS = 25 * 60;
 const AUDIO_NOISE_FLOOR = 0.02;
@@ -68,7 +68,7 @@ function audioMotionLevel(value: number) {
  */
 export function PomodoroTimer() {
   // --- Timer and Focus State ---
-  const { hiddenWidgets } = useDashboardCustomization();
+  const { editMode, hiddenWidgets, widgetOrder, widgetSizes } = useDashboardCustomization();
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_SECONDS);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(false);
@@ -240,6 +240,11 @@ export function PomodoroTimer() {
     setFocusOpen(true);
     endTimeRef.current = Date.now() + nextTotal * 1000;
     setRunning(true);
+    window.dispatchEvent(
+      new CustomEvent("control-panel:automation-trigger", {
+        detail: { trigger: "pomodoro" },
+      }),
+    );
   };
 
   /**
@@ -329,17 +334,20 @@ export function PomodoroTimer() {
       initial={focused || reduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }}
       animate={{ opacity: !focused && focusOpen ? 0 : 1, y: 0, scale: 1 }}
       transition={{ duration: reduceMotion ? 0 : 0.9, ease: [0.22, 1, 0.36, 1], delay: focused ? 0 : 0.12 }}
-      className={`widget-panel relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] border-t-white/[0.16] bg-graphite-800 shadow-panel ${
+      className={`widget-panel ${focused ? "" : "dashboard-widget"} relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] border-t-white/[0.16] bg-graphite-800 shadow-panel ${
         focused
           ? `pointer-events-auto max-h-[calc(100dvh-2rem)] min-h-[clamp(280px,54vh,360px)] w-[min(31rem,calc(100vw-2rem))] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_30px_90px_rgba(0,0,0,0.72)] ${
               completed ? "border-red-400/35" : "border-signal-400/20"
             }`
           : `h-full min-h-[220px] md:col-span-2 lg:col-span-3 ${focusOpen ? "pointer-events-none" : ""}`
       }`}
+      style={focused ? undefined : { order: widgetOrder.indexOf("pomodoro") }}
+      data-widget-size={focused ? undefined : widgetSizes.pomodoro}
       >
         <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
         <h2 className="sr-only">Pomodoro</h2>
         {!focused && <WidgetVisibilityButton widgetId="pomodoro" title="Pomodoro" />}
+        {!focused && editMode && <WidgetEditControls widgetId="pomodoro" title="Pomodoro" />}
 
       {focused && running && (
         <button
@@ -410,10 +418,12 @@ export function PomodoroTimer() {
           selected={timerActive}
           aria-label={completed ? "Dismiss completed Pomodoro and reset" : running ? "Pause Pomodoro timer" : "Play Pomodoro timer"}
           data-shortcut-combo="Control+Alt+KeyP"
+          data-shortcut-id="pomodoro:toggle"
           data-shortcut-label="Start / pause Pomodoro"
           data-shortcut-detail="Toggles the current timer"
           data-shortcut-group="Pomodoro"
           data-shortcut-order="0"
+          data-control-action="pomodoro-toggle"
           title={completed ? "Reset" : running ? "Pause" : "Play"}
           className={`grid place-items-center rounded-full ${focused ? "size-14" : "size-11"}`}
         >

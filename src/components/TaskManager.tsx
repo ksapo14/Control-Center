@@ -8,13 +8,16 @@ import {
   LoaderCircle,
   LockKeyhole,
   Maximize2,
+  Minimize2,
   Monitor,
   PanelLeft,
   PanelRight,
   RefreshCw,
   RotateCcw,
   Save,
+  Square,
   Trash2,
+  Undo2,
   X,
 } from "lucide-react";
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -46,12 +49,29 @@ type OpenApplication = {
   width: number;
   height: number;
   minimized: boolean;
+  maximized: boolean;
   protected: boolean;
   protectedReason: string | null;
 };
 
 type DraftWindow = OpenApplication & { close: boolean };
 type WindowWorkspace = { monitors: DisplayMonitor[]; windows: OpenApplication[] };
+type WindowWorkspaceUpdate = {
+  handle: number;
+  pid: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  close: boolean;
+  state: "normal" | "minimized" | "maximized";
+};
+type LayoutProfile = {
+  id: string;
+  name: string;
+  createdAt: string;
+  windows: Array<Pick<DraftWindow, "name" | "title" | "monitorId" | "x" | "y" | "width" | "height" | "minimized" | "maximized">>;
+};
 type Interaction = {
   handle: number;
   pointerId: number;
@@ -60,7 +80,10 @@ type Interaction = {
   startClientY: number;
   startWindow: DraftWindow;
 };
-type LayoutPreset = "full" | "left" | "right";
+type LayoutPreset = "full" | "left" | "right" | "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+const LAYOUT_PROFILES_STORAGE_KEY = "control-panel.window-layout-profiles";
+const SNAP_THRESHOLD = 18;
 
 const previewWorkspace: WindowWorkspace = {
   monitors: [
@@ -103,6 +126,7 @@ const previewWorkspace: WindowWorkspace = {
       width: 1080,
       height: 760,
       minimized: false,
+      maximized: false,
       protected: false,
       protectedReason: null,
     },
@@ -117,6 +141,7 @@ const previewWorkspace: WindowWorkspace = {
       width: 700,
       height: 880,
       minimized: false,
+      maximized: false,
       protected: false,
       protectedReason: null,
     },
@@ -131,6 +156,7 @@ const previewWorkspace: WindowWorkspace = {
       width: 1120,
       height: 720,
       minimized: false,
+      maximized: false,
       protected: false,
       protectedReason: null,
     },
@@ -145,6 +171,7 @@ const previewWorkspace: WindowWorkspace = {
       width: 180,
       height: 620,
       minimized: false,
+      maximized: false,
       protected: true,
       protectedReason: "Windows shell process is protected",
     },
@@ -169,7 +196,7 @@ function clamp(value: number, minimum: number, maximum: number) {
  */
 function layoutSignature(windows: DraftWindow[]) {
   return JSON.stringify(
-    windows.map(({ handle, monitorId, x, y, width, height, close }) => ({ handle, monitorId, x, y, width, height, close })),
+    windows.map(({ handle, monitorId, x, y, width, height, minimized, maximized, close }) => ({ handle, monitorId, x, y, width, height, minimized, maximized, close })),
   );
 }
 
@@ -178,8 +205,51 @@ function layoutSignature(windows: DraftWindow[]) {
  * @param application - Draft window to compare with its captured baseline.
  * @returns A stable representation of its mutable fields.
  */
-function windowLayoutSignature({ monitorId, x, y, width, height, close }: DraftWindow) {
-  return JSON.stringify({ monitorId, x, y, width, height, close });
+function windowLayoutSignature({ monitorId, x, y, width, height, minimized, maximized, close }: DraftWindow) {
+  return JSON.stringify({ monitorId, x, y, width, height, minimized, maximized, close });
+}
+
+/**
+ * Restores saved layout profiles without trusting malformed local data.
+ * @returns Portable window layout profiles, or an empty list when unavailable.
+ */
+function initialLayoutProfiles(): LayoutProfile[] {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(LAYOUT_PROFILES_STORAGE_KEY) ?? "[]");
+    return Array.isArray(stored) ? stored : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Converts a draft into the explicit state contract accepted by the native batch command.
+ * @param application - Window draft to serialize.
+ * @returns Native workspace update data.
+ */
+function nativeWindowUpdate(application: DraftWindow): WindowWorkspaceUpdate {
+  return {
+    handle: application.handle,
+    pid: application.pid,
+    x: application.x,
+    y: application.y,
+    width: application.width,
+    height: application.height,
+    close: application.close,
+    state: application.minimized ? "minimized" : application.maximized ? "maximized" : "normal",
+  };
+}
+
+/**
+ * Pulls a coordinate toward nearby workspace guides without making free movement feel sticky.
+ * @param value - Proposed native desktop coordinate.
+ * @param guides - Nearby edge or center coordinates.
+ * @returns The closest guide within the touch-friendly snap threshold.
+ */
+function snapCoordinate(value: number, guides: number[]) {
+  const closest = guides.reduce((best, guide) =>
+    Math.abs(guide - value) < Math.abs(best - value) ? guide : best, guides[0] ?? value);
+  return Math.abs(closest - value) <= SNAP_THRESHOLD ? closest : value;
 }
 
 /**
@@ -197,8 +267,12 @@ export function TaskManager() {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState("Drag a window to move it, then use Save to apply every change together.");
   const [noticeKind, setNoticeKind] = useState<"info" | "error" | "success">("info");
+  const [layoutProfiles, setLayoutProfiles] = useState<LayoutProfile[]>(initialLayoutProfiles);
+  const [profileName, setProfileName] = useState("");
+  const [undoUpdates, setUndoUpdates] = useState<WindowWorkspaceUpdate[] | null>(null);
   const baselineRef = useRef("[]");
   const baselineWindowsRef = useRef(new Map<number, string>());
+  const baselineDraftsRef = useRef(new Map<number, DraftWindow>());
   const interactionRef = useRef<Interaction | null>(null);
   const canvasRefs = useRef(new Map<string, HTMLDivElement>());
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -208,6 +282,14 @@ export function TaskManager() {
   const selectedWindow = windows.find((window) => window.handle === selectedHandle) ?? null;
   const hasChanges = layoutSignature(windows) !== baselineRef.current;
   const stagedCloseCount = windows.filter((window) => window.close).length;
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(LAYOUT_PROFILES_STORAGE_KEY, JSON.stringify(layoutProfiles));
+    } catch {
+      // Profiles remain available for this session when local storage is blocked.
+    }
+  }, [layoutProfiles]);
 
   /**
    * Replaces the draft with a fresh native workspace snapshot.
@@ -225,8 +307,14 @@ export function TaskManager() {
       setWindows(draft);
       baselineRef.current = layoutSignature(draft);
       baselineWindowsRef.current = new Map(draft.map((window) => [window.handle, windowLayoutSignature(window)]));
+      baselineDraftsRef.current = new Map(draft.map((window) => [window.handle, { ...window }]));
       setSelectedHandle((current) => (draft.some((window) => window.handle === current) ? current : (draft[0]?.handle ?? null)));
-      setNotice(`${snapshot.monitors.length} screen${snapshot.monitors.length === 1 ? "" : "s"} and ${draft.length} app window${draft.length === 1 ? "" : "s"} ready to arrange.`);
+      const missingProfileDisplays = layoutProfiles.some((profile) =>
+        profile.windows.some((application) => !snapshot.monitors.some((monitor) => monitor.id === application.monitorId)),
+      );
+      setNotice(missingProfileDisplays
+        ? `${draft.length} windows ready. A saved profile references a disconnected display and will fall back to the primary screen.`
+        : `${snapshot.monitors.length} screen${snapshot.monitors.length === 1 ? "" : "s"} and ${draft.length} app window${draft.length === 1 ? "" : "s"} ready to arrange.`);
       setNoticeKind("info");
     } catch (error) {
       setNotice(errorMessage(error));
@@ -234,7 +322,7 @@ export function TaskManager() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [layoutProfiles]);
 
   /**
    * Opens the editor with current Windows topology and geometry.
@@ -354,9 +442,27 @@ export function TaskManager() {
     const start = interaction.startWindow;
 
     if (interaction.mode === "move") {
+      const proposedX = clamp(start.x + deltaX, monitor.workX, monitor.workX + monitor.workWidth - start.width);
+      const proposedY = clamp(start.y + deltaY, monitor.workY, monitor.workY + monitor.workHeight - start.height);
+      const peers = windows.filter(
+        (application) => application.handle !== interaction.handle && application.monitorId === monitor.id && !application.close,
+      );
+      // Screen and peer edges act as forgiving guides for finger-driven alignment.
+      const xGuides = [
+        monitor.workX,
+        monitor.workX + Math.round((monitor.workWidth - start.width) / 2),
+        monitor.workX + monitor.workWidth - start.width,
+        ...peers.flatMap((application) => [application.x, application.x + application.width, application.x - start.width]),
+      ];
+      const yGuides = [
+        monitor.workY,
+        monitor.workY + Math.round((monitor.workHeight - start.height) / 2),
+        monitor.workY + monitor.workHeight - start.height,
+        ...peers.flatMap((application) => [application.y, application.y + application.height, application.y - start.height]),
+      ];
       updateWindow(interaction.handle, {
-        x: clamp(start.x + deltaX, monitor.workX, monitor.workX + monitor.workWidth - start.width),
-        y: clamp(start.y + deltaY, monitor.workY, monitor.workY + monitor.workHeight - start.height),
+        x: snapCoordinate(proposedX, xGuides),
+        y: snapCoordinate(proposedY, yGuides),
       });
       return;
     }
@@ -400,19 +506,187 @@ export function TaskManager() {
   /**
    * Applies a touch-friendly snap layout to the selected draft window.
    * @param application - Window receiving the preset.
-   * @param preset - Full-screen or half-screen target.
+   * @param preset - Full-screen, half-screen, or quarter-screen target.
    * @returns Nothing.
    */
   const applyPreset = (application: DraftWindow, preset: LayoutPreset) => {
     const monitor = monitors.find((item) => item.id === application.monitorId);
     if (!monitor) return;
     const halfWidth = Math.floor(monitor.workWidth / 2);
-    const geometry = preset === "full"
-      ? { x: monitor.workX, y: monitor.workY, width: monitor.workWidth, height: monitor.workHeight }
-      : preset === "left"
-        ? { x: monitor.workX, y: monitor.workY, width: halfWidth, height: monitor.workHeight }
-        : { x: monitor.workX + halfWidth, y: monitor.workY, width: monitor.workWidth - halfWidth, height: monitor.workHeight };
-    updateWindow(application.handle, geometry);
+    const halfHeight = Math.floor(monitor.workHeight / 2);
+    const geometries: Record<LayoutPreset, Pick<DraftWindow, "x" | "y" | "width" | "height">> = {
+      full: { x: monitor.workX, y: monitor.workY, width: monitor.workWidth, height: monitor.workHeight },
+      left: { x: monitor.workX, y: monitor.workY, width: halfWidth, height: monitor.workHeight },
+      right: { x: monitor.workX + halfWidth, y: monitor.workY, width: monitor.workWidth - halfWidth, height: monitor.workHeight },
+      "top-left": { x: monitor.workX, y: monitor.workY, width: halfWidth, height: halfHeight },
+      "top-right": { x: monitor.workX + halfWidth, y: monitor.workY, width: monitor.workWidth - halfWidth, height: halfHeight },
+      "bottom-left": { x: monitor.workX, y: monitor.workY + halfHeight, width: halfWidth, height: monitor.workHeight - halfHeight },
+      "bottom-right": { x: monitor.workX + halfWidth, y: monitor.workY + halfHeight, width: monitor.workWidth - halfWidth, height: monitor.workHeight - halfHeight },
+    };
+    updateWindow(application.handle, { ...geometries[preset], minimized: false, maximized: false });
+  };
+
+  /**
+   * Moves every editable window to one screen while preserving relative placement.
+   * @param target - Destination display for all staged windows.
+   * @returns Nothing.
+   */
+  const moveAllToMonitor = (target: DisplayMonitor) => {
+    setWindows((current) => current.map((application) => {
+      if (application.protected || application.close || application.monitorId === target.id) return application;
+      const source = monitors.find((monitor) => monitor.id === application.monitorId) ?? target;
+      const width = Math.min(application.width, target.workWidth);
+      const height = Math.min(application.height, target.workHeight);
+      const relativeX = (application.x - source.workX) / Math.max(source.workWidth, 1);
+      const relativeY = (application.y - source.workY) / Math.max(source.workHeight, 1);
+      return {
+        ...application,
+        monitorId: target.id,
+        width,
+        height,
+        x: clamp(target.workX + Math.round(relativeX * target.workWidth), target.workX, target.workX + target.workWidth - width),
+        y: clamp(target.workY + Math.round(relativeY * target.workHeight), target.workY, target.workY + target.workHeight - height),
+      };
+    }));
+  };
+
+  /**
+   * Places a monitor's editable windows into evenly spaced columns for quick cleanup.
+   * @param monitor - Display whose windows should be distributed.
+   * @returns Nothing.
+   */
+  const distributeWindows = (monitor: DisplayMonitor) => {
+    const candidates = windows.filter(
+      (application) => application.monitorId === monitor.id && !application.protected && !application.close,
+    );
+    if (candidates.length < 2) return;
+    const gap = 16;
+    const columnWidth = Math.max(160, Math.floor((monitor.workWidth - gap * (candidates.length + 1)) / candidates.length));
+    setWindows((current) => current.map((application) => {
+      const index = candidates.findIndex((candidate) => candidate.handle === application.handle);
+      if (index < 0) return application;
+      return {
+        ...application,
+        x: monitor.workX + gap + index * (columnWidth + gap),
+        y: monitor.workY + gap,
+        width: Math.min(columnWidth, monitor.workWidth - gap * 2),
+        height: monitor.workHeight - gap * 2,
+        minimized: false,
+        maximized: false,
+      };
+    }));
+  };
+
+  /**
+   * Matches a portable profile to live windows by title first and app occurrence second.
+   * @param profile - Saved layout to stage.
+   * @param liveWindows - Current desktop windows that may receive saved geometry.
+   * @param liveMonitors - Connected displays used to validate destinations.
+   * @returns Updated drafts plus counts for unavailable windows or displays.
+   */
+  const mergeLayoutProfile = (
+    profile: LayoutProfile,
+    liveWindows: DraftWindow[],
+    liveMonitors: DisplayMonitor[],
+  ) => {
+    const matchedHandles = new Set<number>();
+    const replacements = new Map<number, DraftWindow>();
+    let missingWindows = 0;
+    let missingDisplays = 0;
+    const fallbackMonitor = liveMonitors.find((monitor) => monitor.primary) ?? liveMonitors[0];
+
+    for (const saved of profile.windows) {
+      const exact = liveWindows.find(
+        (application) => !matchedHandles.has(application.handle) && application.title === saved.title,
+      );
+      const match = exact ?? liveWindows.find(
+        (application) => !matchedHandles.has(application.handle) && application.name === saved.name,
+      );
+      if (!match || match.protected) {
+        missingWindows += 1;
+        continue;
+      }
+      const monitor = liveMonitors.find((candidate) => candidate.id === saved.monitorId) ?? fallbackMonitor;
+      if (!monitor) continue;
+      if (monitor.id !== saved.monitorId) missingDisplays += 1;
+      const width = Math.min(saved.width, monitor.workWidth);
+      const height = Math.min(saved.height, monitor.workHeight);
+      matchedHandles.add(match.handle);
+      replacements.set(match.handle, {
+        ...match,
+        monitorId: monitor.id,
+        x: clamp(saved.x, monitor.workX, monitor.workX + monitor.workWidth - width),
+        y: clamp(saved.y, monitor.workY, monitor.workY + monitor.workHeight - height),
+        width,
+        height,
+        minimized: saved.minimized,
+        maximized: saved.maximized,
+        close: false,
+      });
+    }
+    return {
+      drafts: liveWindows.map((application) => replacements.get(application.handle) ?? application),
+      missingWindows,
+      missingDisplays,
+    };
+  };
+
+  /** Saves the current staged arrangement as a reusable, app-title-aware profile. */
+  const saveLayoutProfile = () => {
+    const name = profileName.trim();
+    if (!name || windows.length === 0) return;
+    const profile: LayoutProfile = {
+      id: crypto.randomUUID(),
+      name: name.slice(0, 40),
+      createdAt: new Date().toISOString(),
+      windows: windows
+        .filter((application) => !application.protected && !application.close)
+        .map(({ name: appName, title, monitorId, x, y, width, height, minimized, maximized }) => ({
+          name: appName,
+          title,
+          monitorId,
+          x,
+          y,
+          width,
+          height,
+          minimized,
+          maximized,
+        })),
+    };
+    setLayoutProfiles((current) => [profile, ...current].slice(0, 20));
+    setProfileName("");
+    setNotice(`Saved “${profile.name}” with ${profile.windows.length} windows.`);
+    setNoticeKind("success");
+  };
+
+  /** Stages a saved profile in the open editor without changing native windows yet. */
+  const stageLayoutProfile = (profile: LayoutProfile) => {
+    const merged = mergeLayoutProfile(profile, windows, monitors);
+    setWindows(merged.drafts);
+    setNotice(merged.missingWindows || merged.missingDisplays
+      ? `Profile staged with ${merged.missingWindows} unavailable window${merged.missingWindows === 1 ? "" : "s"} and ${merged.missingDisplays} display fallback${merged.missingDisplays === 1 ? "" : "s"}.`
+      : `Profile “${profile.name}” staged. Save to apply it.`);
+    setNoticeKind(merged.missingWindows || merged.missingDisplays ? "error" : "info");
+  };
+
+  /**
+   * Applies a profile requested by an app group even when the workspace modal is closed.
+   * @param profile - Profile associated with the app group.
+   * @returns A promise resolved after native window updates finish.
+   */
+  const applyLayoutProfileDirectly = async (profile: LayoutProfile) => {
+    if (!isTauriRuntime()) return;
+    try {
+      const snapshot = await invoke<WindowWorkspace>("get_window_workspace");
+      const liveDrafts = snapshot.windows.map((application) => ({ ...application, close: false }));
+      const merged = mergeLayoutProfile(profile, liveDrafts, snapshot.monitors);
+      const updates = merged.drafts
+        .filter((application, index) => windowLayoutSignature(application) !== windowLayoutSignature(liveDrafts[index]))
+        .map(nativeWindowUpdate);
+      if (updates.length > 0) await invoke("apply_window_workspace", { request: { windows: updates } });
+    } catch {
+      // Group launches stay useful even when a profile becomes stale or a process exits.
+    }
   };
 
   /**
@@ -426,9 +700,13 @@ export function TaskManager() {
     setNotice("Applying the staged desktop layout…");
     setNoticeKind("info");
     try {
-      const updates = windows
+      const changedWindows = windows
         .filter((window) => !window.protected && baselineWindowsRef.current.get(window.handle) !== windowLayoutSignature(window))
-        .map(({ handle, pid, x, y, width, height, close }) => ({ handle, pid, x, y, width, height, close }));
+      const updates = changedWindows.map(nativeWindowUpdate);
+      const reversible = changedWindows.flatMap((application) => {
+        const baseline = baselineDraftsRef.current.get(application.handle);
+        return baseline && !application.close ? [nativeWindowUpdate({ ...baseline, close: false })] : [];
+      });
       if (isTauriRuntime()) {
         await invoke("apply_window_workspace", { request: { windows: updates } });
         await loadWorkspace();
@@ -437,9 +715,44 @@ export function TaskManager() {
         setWindows(remaining);
         baselineRef.current = layoutSignature(remaining);
         baselineWindowsRef.current = new Map(remaining.map((window) => [window.handle, windowLayoutSignature(window)]));
+        baselineDraftsRef.current = new Map(remaining.map((window) => [window.handle, { ...window }]));
         setSelectedHandle(remaining[0]?.handle ?? null);
       }
+      setUndoUpdates(reversible.length > 0 ? reversible : null);
       setNotice("Window layout saved and applied.");
+      setNoticeKind("success");
+    } catch (error) {
+      setNotice(errorMessage(error));
+      setNoticeKind("error");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Reapplies the pre-save geometry for windows that still exist. */
+  const undoLastSave = async () => {
+    if (!undoUpdates || saving) return;
+    setSaving(true);
+    try {
+      if (isTauriRuntime()) {
+        await invoke("apply_window_workspace", { request: { windows: undoUpdates } });
+        await loadWorkspace();
+      } else {
+        setWindows((current) => current.map((application) => {
+          const previous = undoUpdates.find((update) => update.handle === application.handle);
+          return previous ? {
+            ...application,
+            x: previous.x,
+            y: previous.y,
+            width: previous.width,
+            height: previous.height,
+            minimized: previous.state === "minimized",
+            maximized: previous.state === "maximized",
+          } : application;
+        }));
+      }
+      setUndoUpdates(null);
+      setNotice("The previous saved window layout was restored.");
       setNoticeKind("success");
     } catch (error) {
       setNotice(errorMessage(error));
@@ -466,10 +779,12 @@ export function TaskManager() {
         aria-haspopup="dialog"
         aria-label="Arrange open applications"
         data-shortcut-combo="Control+Alt+KeyO"
+        data-shortcut-id="control:open-apps"
         data-shortcut-label="Open app workspace"
         data-shortcut-detail="Arrange windows across screens"
         data-shortcut-group="Control panel"
         data-shortcut-order="1"
+        data-control-action="open-apps"
       >
         <span className="flex items-center gap-2.5">
           <AppWindow size={18} strokeWidth={1.7} className="text-signal-300" />
@@ -478,6 +793,19 @@ export function TaskManager() {
           </span>
         </span>
       </TactileButton>
+
+      {layoutProfiles.map((profile) => (
+        <button
+          key={profile.id}
+          type="button"
+          className="hidden"
+          data-layout-profile-id={profile.id}
+          data-layout-profile-name={profile.name}
+          onClick={() => void applyLayoutProfileDirectly(profile)}
+          tabIndex={-1}
+          aria-hidden="true"
+        />
+      ))}
 
       <AnimatePresence>
         {open && (
@@ -512,6 +840,16 @@ export function TaskManager() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void undoLastSave()}
+                    disabled={!undoUpdates || saving || loading}
+                    className="grid size-11 place-items-center rounded-[11px] border border-black/60 bg-black/20 text-stone-400 shadow-well transition hover:text-stone-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 disabled:opacity-30"
+                    aria-label="Undo last saved layout"
+                    title="Undo last save"
+                  >
+                    <Undo2 size={18} />
+                  </button>
                   <button
                     type="button"
                     onClick={() => void loadWorkspace()}
@@ -570,7 +908,7 @@ export function TaskManager() {
                     <div className={`grid gap-4 ${monitors.length > 1 ? "xl:grid-cols-2" : "grid-cols-1"}`}>
                       {monitors.map((monitor, monitorIndex) => (
                         <section key={monitor.id} className="rounded-[16px] border border-black/70 border-t-white/[0.07] bg-black/20 p-3 shadow-well">
-                          <div className="mb-2.5 flex items-center justify-between gap-3 px-0.5">
+                          <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 px-0.5">
                             <div className="flex items-center gap-2">
                               <Monitor size={15} className="text-signal-400" />
                               <h3 className="text-xs font-semibold text-stone-300">
@@ -578,7 +916,11 @@ export function TaskManager() {
                                 {monitor.primary ? <span className="ml-2 font-mono text-[9px] uppercase tracking-[0.1em] text-signal-500">Primary</span> : null}
                               </h3>
                             </div>
-                            <span className="font-mono text-[10px] text-stone-600">{monitor.width} × {monitor.height}</span>
+                            <div className="flex items-center gap-1.5">
+                              <button type="button" onClick={() => distributeWindows(monitor)} className="min-h-8 rounded-lg border border-black/50 bg-black/15 px-2 text-[9px] font-semibold uppercase tracking-[0.06em] text-stone-600 hover:text-stone-300" title="Evenly space windows on this screen">Space evenly</button>
+                              <button type="button" onClick={() => moveAllToMonitor(monitor)} className="min-h-8 rounded-lg border border-black/50 bg-black/15 px-2 text-[9px] font-semibold uppercase tracking-[0.06em] text-stone-600 hover:text-stone-300" title="Move every editable window to this screen">Move all here</button>
+                              <span className="font-mono text-[10px] text-stone-600">{monitor.width} × {monitor.height}</span>
+                            </div>
                           </div>
                           <div
                             ref={(node) => {
@@ -644,10 +986,13 @@ export function TaskManager() {
                   {selectedWindow ? (
                     <div>
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
+                        <div className="flex min-w-0 items-start gap-3">
+                          <span className="grid size-11 shrink-0 place-items-center rounded-[11px] border border-signal-900/50 bg-signal-950/30 text-base font-semibold text-signal-300 shadow-well" aria-hidden="true">{selectedWindow.name.slice(0, 1).toUpperCase()}</span>
+                          <div className="min-w-0">
                           <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-signal-500">Selected window</p>
                           <h3 className="mt-1 truncate text-lg font-semibold text-stone-100" title={selectedWindow.title}>{selectedWindow.name}</h3>
                           <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-stone-600">{selectedWindow.title}</p>
+                          </div>
                         </div>
                         {selectedWindow.protected ? <LockKeyhole size={18} className="mt-1 shrink-0 text-stone-600" /> : null}
                       </div>
@@ -680,19 +1025,37 @@ export function TaskManager() {
                           </div>
 
                           <div className="mt-5">
-                            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.13em] text-stone-600">Snap layout</p>
+                            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.13em] text-stone-600">Window state</p>
                             <div className="grid grid-cols-3 gap-2">
+                              {([
+                                ["minimized", Minimize2, "Minimize"],
+                                ["normal", Square, "Restore"],
+                                ["maximized", Maximize2, "Maximize"],
+                              ] as const).map(([state, Icon, label]) => {
+                                const selected = state === "minimized" ? selectedWindow.minimized : state === "maximized" ? selectedWindow.maximized : !selectedWindow.minimized && !selectedWindow.maximized;
+                                return <button key={state} type="button" onClick={() => updateWindow(selectedWindow.handle, { minimized: state === "minimized", maximized: state === "maximized" })} disabled={selectedWindow.close} className={`grid min-h-[54px] place-items-center rounded-[10px] border py-2 text-[9px] font-semibold uppercase tracking-[0.05em] ${selected ? "border-signal-700 bg-signal-950/45 text-signal-200" : "border-black/60 bg-black/20 text-stone-600"}`}><Icon size={16} />{label}</button>;
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="mt-5">
+                            <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.13em] text-stone-600">Snap layout</p>
+                            <div className="grid grid-cols-4 gap-2">
                               {([
                                 ["left", PanelLeft, "Left"],
                                 ["full", Maximize2, "Full"],
                                 ["right", PanelRight, "Right"],
+                                ["top-left", Square, "Top left"],
+                                ["top-right", Square, "Top right"],
+                                ["bottom-left", Square, "Bottom left"],
+                                ["bottom-right", Square, "Bottom right"],
                               ] as const).map(([preset, Icon, label]) => (
                                 <button
                                   key={preset}
                                   type="button"
                                   onClick={() => applyPreset(selectedWindow, preset)}
                                   disabled={selectedWindow.close}
-                                  className="grid min-h-[58px] place-items-center rounded-[10px] border border-black/60 bg-black/20 py-2 text-[10px] font-semibold uppercase tracking-[0.06em] text-stone-500 shadow-well transition hover:text-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 disabled:opacity-35"
+                                  className="grid min-h-[58px] place-items-center rounded-[10px] border border-black/60 bg-black/20 py-2 text-[8px] font-semibold uppercase tracking-[0.04em] text-stone-500 shadow-well transition hover:text-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 disabled:opacity-35"
                                 >
                                   <Icon size={17} />
                                   {label}
@@ -736,6 +1099,24 @@ export function TaskManager() {
                       </div>
                     </div>
                   )}
+
+                  <section className="mt-6 border-t border-white/[0.05] pt-5">
+                    <p className="font-mono text-[10px] uppercase tracking-[0.13em] text-stone-600">Layout profiles</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-stone-700">Recall window positions by title, including duplicate instances of the same app.</p>
+                    <div className="mt-3 flex gap-2">
+                      <input value={profileName} onChange={(event) => setProfileName(event.target.value)} onKeyDown={(event) => event.key === "Enter" && saveLayoutProfile()} placeholder="Profile name" maxLength={40} className="schedule-input min-w-0 flex-1" />
+                      <button type="button" onClick={saveLayoutProfile} disabled={!profileName.trim() || windows.length === 0} className="min-h-11 rounded-[10px] border border-signal-900/60 bg-signal-950/35 px-3 text-[10px] font-semibold uppercase tracking-[0.07em] text-signal-300 disabled:opacity-30">Save</button>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {layoutProfiles.map((profile) => (
+                        <div key={profile.id} className="flex items-center gap-2 rounded-[10px] border border-black/60 bg-black/15 p-2">
+                          <button type="button" onClick={() => stageLayoutProfile(profile)} className="min-h-10 min-w-0 flex-1 truncate rounded-lg px-2 text-left text-xs font-semibold text-stone-400 hover:bg-white/[0.03] hover:text-stone-200">{profile.name}<span className="ml-2 font-mono text-[8px] font-normal text-stone-700">{profile.windows.length} windows</span></button>
+                          <button type="button" onClick={() => setLayoutProfiles((current) => current.filter((candidate) => candidate.id !== profile.id))} className="grid size-10 place-items-center rounded-lg text-stone-700 hover:text-red-300" aria-label={`Delete ${profile.name} layout profile`}><Trash2 size={13} /></button>
+                        </div>
+                      ))}
+                      {layoutProfiles.length === 0 ? <p className="rounded-[10px] border border-dashed border-white/[0.05] p-3 text-center text-[10px] text-stone-700">No saved profiles yet</p> : null}
+                    </div>
+                  </section>
                 </aside>
               </div>
 

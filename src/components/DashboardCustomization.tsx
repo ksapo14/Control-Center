@@ -17,16 +17,26 @@ export type WidgetId =
   | "spotify"
   | "system-vitals"
   | "pomodoro";
+export type WidgetSize = "compact" | "standard" | "wide";
 
 type DashboardCustomizationValue = {
   theme: DashboardTheme;
   hiddenWidgets: ReadonlySet<WidgetId>;
+  widgetOrder: readonly WidgetId[];
+  widgetSizes: Readonly<Record<WidgetId, WidgetSize>>;
+  editMode: boolean;
   setTheme: (theme: DashboardTheme) => void;
   setWidgetHidden: (widgetId: WidgetId, hidden: boolean) => void;
+  setEditMode: (enabled: boolean) => void;
+  moveWidget: (widgetId: WidgetId, direction: -1 | 1) => void;
+  cycleWidgetSize: (widgetId: WidgetId) => void;
+  resetDashboardLayout: () => void;
 };
 
 const THEME_STORAGE_KEY = "control-panel.theme";
 const HIDDEN_WIDGETS_STORAGE_KEY = "control-panel.hidden-widgets";
+const WIDGET_ORDER_STORAGE_KEY = "control-panel.widget-order";
+const WIDGET_SIZES_STORAGE_KEY = "control-panel.widget-sizes";
 const themes: Array<{ id: DashboardTheme; label: string; color: string }> = [
   { id: "black", label: "Black", color: "#282b29" },
   { id: "tan", label: "Tan", color: "#daa64b" },
@@ -43,6 +53,16 @@ const widgetIds = new Set<WidgetId>([
   "system-vitals",
   "pomodoro",
 ]);
+const defaultWidgetOrder = [...widgetIds];
+const defaultWidgetSizes: Record<WidgetId, WidgetSize> = {
+  clock: "standard",
+  volume: "standard",
+  bluetooth: "standard",
+  "quick-links": "standard",
+  spotify: "standard",
+  "system-vitals": "standard",
+  pomodoro: "standard",
+};
 
 const DashboardCustomizationContext = createContext<DashboardCustomizationValue | null>(null);
 
@@ -77,6 +97,48 @@ function initialHiddenWidgets(): Set<WidgetId> {
 }
 
 /**
+ * Restores a complete widget order while tolerating preferences from older app versions.
+ * @returns Every known widget exactly once in its persisted order.
+ */
+function initialWidgetOrder(): WidgetId[] {
+  try {
+    const stored = JSON.parse(window.localStorage.getItem(WIDGET_ORDER_STORAGE_KEY) ?? "[]");
+    if (Array.isArray(stored)) {
+      const valid = stored.filter(
+        (value, index): value is WidgetId =>
+          widgetIds.has(value) && stored.indexOf(value) === index,
+      );
+      return [...valid, ...defaultWidgetOrder.filter((widgetId) => !valid.includes(widgetId))];
+    }
+  } catch {
+    // A corrupt layout falls back independently without discarding other preferences.
+  }
+  return [...defaultWidgetOrder];
+}
+
+/**
+ * Restores per-widget size choices and fills missing entries with safe defaults.
+ * @returns A complete map of validated widget sizes.
+ */
+function initialWidgetSizes(): Record<WidgetId, WidgetSize> {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(WIDGET_SIZES_STORAGE_KEY) ?? "{}",
+    ) as Partial<Record<WidgetId, WidgetSize>>;
+    return Object.fromEntries(
+      defaultWidgetOrder.map((widgetId) => [
+        widgetId,
+        ["compact", "standard", "wide"].includes(stored[widgetId] ?? "")
+          ? stored[widgetId]
+          : "standard",
+      ]),
+    ) as Record<WidgetId, WidgetSize>;
+  } catch {
+    return { ...defaultWidgetSizes };
+  }
+}
+
+/**
  * Owns persistent appearance and visibility preferences for every dashboard tile.
  * @param props - Dashboard content that consumes customization state.
  * @returns A shared customization context provider.
@@ -85,6 +147,10 @@ function initialHiddenWidgets(): Set<WidgetId> {
 export function DashboardCustomizationProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<DashboardTheme>(initialTheme);
   const [hiddenWidgets, setHiddenWidgets] = useState<Set<WidgetId>>(initialHiddenWidgets);
+  const [widgetOrder, setWidgetOrder] = useState<WidgetId[]>(initialWidgetOrder);
+  const [widgetSizes, setWidgetSizes] =
+    useState<Record<WidgetId, WidgetSize>>(initialWidgetSizes);
+  const [editMode, setEditMode] = useState(false);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -103,11 +169,24 @@ export function DashboardCustomizationProvider({ children }: { children: ReactNo
     }
   }, [hiddenWidgets]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(WIDGET_ORDER_STORAGE_KEY, JSON.stringify(widgetOrder));
+      window.localStorage.setItem(WIDGET_SIZES_STORAGE_KEY, JSON.stringify(widgetSizes));
+    } catch {
+      // Layout editing remains available for the current session without storage.
+    }
+  }, [widgetOrder, widgetSizes]);
+
   const value = useMemo<DashboardCustomizationValue>(
     () => ({
       theme,
       hiddenWidgets,
+      widgetOrder,
+      widgetSizes,
+      editMode,
       setTheme,
+      setEditMode,
       setWidgetHidden: (widgetId, hidden) => {
         setHiddenWidgets((current) => {
           const next = new Set(current);
@@ -116,8 +195,30 @@ export function DashboardCustomizationProvider({ children }: { children: ReactNo
           return next;
         });
       },
+      moveWidget: (widgetId, direction) => {
+        setWidgetOrder((current) => {
+          const sourceIndex = current.indexOf(widgetId);
+          const targetIndex = sourceIndex + direction;
+          if (sourceIndex < 0 || targetIndex < 0 || targetIndex >= current.length) return current;
+          const next = [...current];
+          [next[sourceIndex], next[targetIndex]] = [next[targetIndex], next[sourceIndex]];
+          return next;
+        });
+      },
+      cycleWidgetSize: (widgetId) => {
+        const sizes: WidgetSize[] = ["compact", "standard", "wide"];
+        setWidgetSizes((current) => ({
+          ...current,
+          [widgetId]: sizes[(sizes.indexOf(current[widgetId]) + 1) % sizes.length],
+        }));
+      },
+      resetDashboardLayout: () => {
+        setWidgetOrder([...defaultWidgetOrder]);
+        setWidgetSizes({ ...defaultWidgetSizes });
+        setHiddenWidgets(new Set());
+      },
     }),
-    [hiddenWidgets, theme],
+    [editMode, hiddenWidgets, theme, widgetOrder, widgetSizes],
   );
 
   return (

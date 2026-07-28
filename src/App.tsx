@@ -15,6 +15,10 @@ import {
   DashboardCustomizationProvider,
   ThemePicker,
 } from "./components/DashboardCustomization";
+import {
+  ControlCenterControls,
+  ControlCenterProvider,
+} from "./components/ControlCenter";
 
 /**
  * Renders the root control-panel shell and arranges the system widgets.
@@ -24,6 +28,7 @@ export default function App() {
   // --- Dashboard Layout ---
   return (
     <DashboardCustomizationProvider>
+      <ControlCenterProvider>
       <main className="relative min-h-[100dvh] overflow-x-hidden bg-graphite-950 text-stone-100">
         <div className="ambient-light pointer-events-none fixed inset-0" />
         <div className="noise-layer pointer-events-none fixed inset-0" />
@@ -47,12 +52,13 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
+          <div className="header-control-strip flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-x-auto sm:gap-2.5">
             <ThemePicker />
             <div className="hidden items-center gap-2 rounded-lg border border-black/50 bg-black/10 px-2.5 py-1.5 shadow-well sm:flex">
               <Power size={11} strokeWidth={1.9} className="text-signal-300" />
               <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-stone-500">System ready</span>
             </div>
+            <ControlCenterControls />
             <KeyboardShortcutControls />
             <TaskManager />
             <QuickSchedule />
@@ -72,6 +78,7 @@ export default function App() {
         </div>
         </div>
       </main>
+      </ControlCenterProvider>
     </DashboardCustomizationProvider>
   );
 }

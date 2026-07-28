@@ -1,5 +1,5 @@
 import { motion, useReducedMotion } from "framer-motion";
-import { Eye, EyeOff } from "lucide-react";
+import { ChevronLeft, ChevronRight, Eye, EyeOff, Scaling } from "lucide-react";
 import type { ReactNode } from "react";
 import { cn } from "../lib/cn";
 import {
@@ -28,7 +28,9 @@ export function WidgetFrame({
   className,
 }: WidgetFrameProps) {
   const reduceMotion = useReducedMotion();
-  const { hiddenWidgets } = useDashboardCustomization();
+  const { hiddenWidgets, widgetOrder, widgetSizes, editMode } =
+    useDashboardCustomization();
+  const layoutStyle = { order: widgetOrder.indexOf(widgetId) };
 
   if (hiddenWidgets.has(widgetId)) {
     return (
@@ -47,16 +49,47 @@ export function WidgetFrame({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
-        "widget-panel relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] border-t-white/[0.16] bg-graphite-800 shadow-panel",
+        "dashboard-widget widget-panel relative flex min-h-0 flex-col overflow-hidden rounded-2xl border border-white/[0.07] border-t-white/[0.16] bg-graphite-800 shadow-panel",
         className,
       )}
+      style={layoutStyle}
+      data-widget-size={widgetSizes[widgetId]}
     >
       <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
       <WidgetVisibilityButton widgetId={widgetId} title={title} />
+      {editMode && <WidgetEditControls widgetId={widgetId} title={title} />}
       <h2 className="sr-only">{title}</h2>
       <span className="sr-only" aria-hidden="true">{icon}</span>
       <div className="relative min-h-0 flex-1">{children}</div>
     </motion.section>
+  );
+}
+
+/**
+ * Provides touch-sized ordering and sizing actions while dashboard edit mode is active.
+ * @param props - Widget identity and accessible title.
+ * @returns An edit toolbar positioned over the widget.
+ */
+export function WidgetEditControls({ widgetId, title }: { widgetId: WidgetId; title: string }) {
+  const { moveWidget, cycleWidgetSize, widgetSizes } = useDashboardCustomization();
+
+  return (
+    <div
+      className="absolute inset-x-2 bottom-2 z-30 flex items-center justify-center gap-1 rounded-xl border border-signal-400/25 bg-graphite-950/90 p-1.5 shadow-panel backdrop-blur"
+      role="toolbar"
+      aria-label={`Edit ${title} tile`}
+    >
+      <button type="button" className="touch-action-button" onClick={() => moveWidget(widgetId, -1)} aria-label={`Move ${title} earlier`}>
+        <ChevronLeft size={16} />
+      </button>
+      <button type="button" className="touch-action-button min-w-24 gap-2 px-3" onClick={() => cycleWidgetSize(widgetId)} aria-label={`Resize ${title}; current size ${widgetSizes[widgetId]}`}>
+        <Scaling size={15} />
+        <span className="text-[9px] font-semibold uppercase tracking-[0.1em]">{widgetSizes[widgetId]}</span>
+      </button>
+      <button type="button" className="touch-action-button" onClick={() => moveWidget(widgetId, 1)} aria-label={`Move ${title} later`}>
+        <ChevronRight size={16} />
+      </button>
+    </div>
   );
 }
 
@@ -97,14 +130,17 @@ export function HiddenWidgetTile({
   icon: ReactNode;
   className?: string;
 }) {
-  const { setWidgetHidden } = useDashboardCustomization();
+  const { setWidgetHidden, widgetOrder, widgetSizes, editMode } =
+    useDashboardCustomization();
 
   return (
     <section
       className={cn(
-        "group grid min-h-[150px] place-items-center rounded-2xl border border-dashed border-white/[0.035] bg-transparent",
+        "dashboard-widget group relative grid min-h-[150px] place-items-center rounded-2xl border border-dashed border-white/[0.035] bg-transparent",
         className,
       )}
+      style={{ order: widgetOrder.indexOf(widgetId) }}
+      data-widget-size={widgetSizes[widgetId]}
       aria-label={`${title} is hidden`}
     >
       <button
@@ -116,6 +152,7 @@ export function HiddenWidgetTile({
         <Eye size={13} strokeWidth={1.7} />
         Show {title}
       </button>
+      {editMode && <WidgetEditControls widgetId={widgetId} title={title} />}
     </section>
   );
 }

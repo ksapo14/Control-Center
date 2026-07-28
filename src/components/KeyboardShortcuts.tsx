@@ -1,15 +1,42 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { CircleAlert, Keyboard, ListChecks, Power, X, Zap } from "lucide-react";
+import { CircleAlert, Keyboard, ListChecks, Pencil, Power, RotateCcw, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TactileButton } from "./TactileButton";
 
 type ShortcutEntry = {
+  id: string;
   combo: string;
+  defaultCombo: string;
   label: string;
   detail: string;
   group: string;
   order: number;
 };
+
+type ShortcutOverrides = Record<string, string>;
+
+const SHORTCUT_OVERRIDES_STORAGE_KEY = "control-panel.shortcut-overrides";
+
+/**
+ * Restores user shortcut mappings while rejecting malformed persisted data.
+ * @returns Stable action identifiers mapped to code-based key combinations.
+ */
+function initialShortcutOverrides(): ShortcutOverrides {
+  try {
+    const stored = JSON.parse(
+      window.localStorage.getItem(SHORTCUT_OVERRIDES_STORAGE_KEY) ?? "{}",
+    );
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+    return Object.fromEntries(
+      Object.entries(stored).filter(
+        (entry): entry is [string, string] =>
+          typeof entry[0] === "string" && typeof entry[1] === "string",
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
 
 /**
  * Converts a keyboard event into the stable code-based format stored on action buttons.
@@ -54,14 +81,17 @@ function shortcutKeys(combo: string) {
  * Reads the currently rendered shortcut actions so custom quick links appear automatically.
  * @returns Deduplicated shortcut metadata ordered by group and explicit action order.
  */
-function collectShortcutEntries(): ShortcutEntry[] {
+function collectShortcutEntries(overrides: ShortcutOverrides): ShortcutEntry[] {
   const entries = Array.from(document.querySelectorAll<HTMLElement>("[data-shortcut-combo]"))
     .flatMap((element) => {
-      const combo = element.dataset.shortcutCombo;
+      const defaultCombo = element.dataset.shortcutCombo;
       const label = element.dataset.shortcutLabel;
-      if (!combo || !label) return [];
+      if (!defaultCombo || !label) return [];
+      const id = element.dataset.shortcutId ?? `${element.dataset.shortcutGroup ?? "General"}:${label}`;
       return [{
-        combo,
+        id,
+        combo: overrides[id] ?? defaultCombo,
+        defaultCombo,
         label,
         detail: element.dataset.shortcutDetail ?? "",
         group: element.dataset.shortcutGroup ?? "General",
@@ -69,7 +99,7 @@ function collectShortcutEntries(): ShortcutEntry[] {
       }];
     });
 
-  const unique = new Map(entries.map((entry) => [`${entry.combo}:${entry.label}`, entry]));
+  const unique = new Map(entries.map((entry) => [entry.id, entry]));
   return Array.from(unique.values()).sort((left, right) =>
     left.group.localeCompare(right.group) || left.order - right.order || left.label.localeCompare(right.label),
   );
@@ -85,6 +115,9 @@ export function KeyboardShortcutControls() {
   const [enabled, setEnabled] = useState(false);
   const [open, setOpen] = useState(false);
   const [shortcuts, setShortcuts] = useState<ShortcutEntry[]>([]);
+  const [overrides, setOverrides] = useState<ShortcutOverrides>(initialShortcutOverrides);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [captureMessage, setCaptureMessage] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -95,9 +128,17 @@ export function KeyboardShortcutControls() {
    * @remarks Side effects: scans shortcut metadata and updates modal state.
    */
   const showDialog = () => {
-    setShortcuts(collectShortcutEntries());
+    setShortcuts(collectShortcutEntries(overrides));
     setOpen(true);
   };
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SHORTCUT_OVERRIDES_STORAGE_KEY, JSON.stringify(overrides));
+    } catch {
+      // Remapping remains active until the current webview closes.
+    }
+  }, [overrides]);
 
   /**
    * Closes the reference modal and restores focus to its title-bar trigger.
@@ -119,7 +160,11 @@ export function KeyboardShortcutControls() {
       if (open || document.querySelector("[role='dialog']")) return;
       const combo = eventCombo(event);
       const candidates = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-shortcut-combo]"));
-      const action = candidates.find((button) => button.dataset.shortcutCombo === combo && !button.disabled);
+      const action = candidates.find((button) => {
+        const id = button.dataset.shortcutId;
+        const resolvedCombo = id ? overrides[id] ?? button.dataset.shortcutCombo : button.dataset.shortcutCombo;
+        return resolvedCombo === combo && !button.disabled;
+      });
       if (!action) return;
 
       event.preventDefault();
@@ -129,7 +174,7 @@ export function KeyboardShortcutControls() {
 
     document.addEventListener("keydown", handleShortcut, true);
     return () => document.removeEventListener("keydown", handleShortcut, true);
-  }, [enabled, open]);
+  }, [enabled, open, overrides]);
 
   useEffect(() => {
     if (!open) return;
@@ -138,6 +183,35 @@ export function KeyboardShortcutControls() {
     const focusTimer = window.setTimeout(() => closeRef.current?.focus(), 80);
 
     const handleDialogKeys = (event: globalThis.KeyboardEvent) => {
+      if (editingId) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          setEditingId(null);
+          setCaptureMessage("");
+          return;
+        }
+        if (["Control", "Alt", "Shift", "Meta"].includes(event.key)) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (!event.ctrlKey && !event.altKey) {
+          setCaptureMessage("Include Ctrl or Alt so normal typing stays unaffected.");
+          return;
+        }
+        const combo = eventCombo(event);
+        const conflict = collectShortcutEntries(overrides).find(
+          (shortcut) => shortcut.id !== editingId && shortcut.combo === combo,
+        );
+        if (conflict) {
+          setCaptureMessage(`Already mapped to ${conflict.label}.`);
+          return;
+        }
+        const nextOverrides = { ...overrides, [editingId]: combo };
+        setOverrides(nextOverrides);
+        setShortcuts(collectShortcutEntries(nextOverrides));
+        setEditingId(null);
+        setCaptureMessage("Shortcut updated.");
+        return;
+      }
       if (event.key === "Escape") {
         event.preventDefault();
         closeDialog();
@@ -165,7 +239,24 @@ export function KeyboardShortcutControls() {
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", handleDialogKeys);
     };
-  }, [closeDialog, open]);
+  }, [closeDialog, editingId, open, overrides]);
+
+  /** Restores one action to its built-in mapping. */
+  const resetShortcut = (shortcut: ShortcutEntry) => {
+    const nextOverrides = { ...overrides };
+    delete nextOverrides[shortcut.id];
+    setOverrides(nextOverrides);
+    setShortcuts(collectShortcutEntries(nextOverrides));
+    setCaptureMessage(`${shortcut.label} restored to its default.`);
+  };
+
+  /** Restores every shortcut without changing the master enabled state. */
+  const resetAllShortcuts = () => {
+    setOverrides({});
+    setShortcuts(collectShortcutEntries({}));
+    setEditingId(null);
+    setCaptureMessage("All shortcuts restored to their defaults.");
+  };
 
   const groupedShortcuts = useMemo(() => {
     const groups = new Map<string, ShortcutEntry[]>();
@@ -272,23 +363,36 @@ export function KeyboardShortcutControls() {
                   </TactileButton>
                 </section>
 
+                <div className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-[11px] border border-white/[0.05] bg-black/15 px-3">
+                  <p className="text-[11px] text-stone-500" aria-live="polite">
+                    {editingId ? "Press the new shortcut now, or Escape to cancel." : captureMessage || "Choose Change beside any mapping to customize it."}
+                  </p>
+                  <button type="button" onClick={resetAllShortcuts} disabled={Object.keys(overrides).length === 0} className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-stone-600 hover:text-stone-300 disabled:opacity-30">
+                    <RotateCcw size={13} /> Reset all
+                  </button>
+                </div>
+
                 <div className="mt-5 grid gap-4 md:grid-cols-2">
                   {groupedShortcuts.map(([group, entries]) => (
                     <section key={group} className="overflow-hidden rounded-[14px] border border-black/70 border-t-white/[0.06] bg-black/20 shadow-well">
                       <h3 className="border-b border-white/[0.04] px-4 py-3 font-mono text-[10px] uppercase tracking-[0.15em] text-signal-500">{group}</h3>
                       <ul className="divide-y divide-white/[0.035]">
                         {entries.map((shortcut) => (
-                          <li key={`${shortcut.combo}-${shortcut.label}`} className="flex min-h-[62px] items-center justify-between gap-3 px-4 py-2.5">
+                          <li key={shortcut.id} className={`flex min-h-[72px] items-center justify-between gap-3 px-4 py-2.5 ${editingId === shortcut.id ? "bg-signal-950/25" : ""}`}>
                             <div className="min-w-0">
                               <p className="truncate text-xs font-semibold text-stone-300">{shortcut.label}</p>
                               {shortcut.detail ? <p className="mt-1 truncate text-[10px] text-stone-700">{shortcut.detail}</p> : null}
                             </div>
-                            <div className="flex shrink-0 items-center gap-1" aria-label={shortcutKeys(shortcut.combo).join(" plus ")}>
-                              {shortcutKeys(shortcut.combo).map((key) => (
-                                <kbd key={key} className="grid min-w-7 place-items-center rounded-[6px] border border-black/80 border-t-white/10 bg-gradient-to-b from-[#242724] to-[#111311] px-1.5 py-1.5 font-mono text-[9px] font-semibold text-stone-400 shadow-skeuo-raised">
-                                  {key}
-                                </kbd>
-                              ))}
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <div className="flex items-center gap-1" aria-label={shortcutKeys(shortcut.combo).join(" plus ")}>
+                                {shortcutKeys(shortcut.combo).map((key) => (
+                                  <kbd key={key} className="grid min-w-7 place-items-center rounded-[6px] border border-black/80 border-t-white/10 bg-gradient-to-b from-[#242724] to-[#111311] px-1.5 py-1.5 font-mono text-[9px] font-semibold text-stone-400 shadow-skeuo-raised">
+                                    {key}
+                                  </kbd>
+                                ))}
+                              </div>
+                              <button type="button" onClick={() => { setEditingId(shortcut.id); setCaptureMessage(""); }} className="grid size-9 place-items-center rounded-lg text-stone-700 hover:bg-white/[0.04] hover:text-signal-300" aria-label={`Change ${shortcut.label} shortcut`} title="Change shortcut"><Pencil size={13} /></button>
+                              {shortcut.combo !== shortcut.defaultCombo ? <button type="button" onClick={() => resetShortcut(shortcut)} className="grid size-9 place-items-center rounded-lg text-stone-700 hover:bg-white/[0.04] hover:text-stone-300" aria-label={`Reset ${shortcut.label} shortcut`} title="Reset shortcut"><RotateCcw size={13} /></button> : null}
                             </div>
                           </li>
                         ))}

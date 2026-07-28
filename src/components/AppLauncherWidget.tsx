@@ -281,10 +281,13 @@ export function AppLauncherWidget() {
                   disabled={busyTarget !== null}
                   aria-label={`${item.label} ${item.detail}`}
                   data-shortcut-combo={launcherShortcut(index)}
+                  data-shortcut-id={`launcher:${item.id}`}
                   data-shortcut-label={`Open ${item.label}`}
                   data-shortcut-detail={item.detail}
                   data-shortcut-group="Quick links"
                   data-shortcut-order={index}
+                  data-launcher-id={item.id}
+                  data-launcher-label={item.label}
                   className="size-full"
                 >
                   <span className="flex h-full min-h-0 flex-col items-center justify-center px-1.5 py-2 text-center">

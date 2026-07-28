@@ -1718,6 +1718,7 @@ struct OpenApplication {
     width: u32,
     height: u32,
     minimized: bool,
+    maximized: bool,
     protected: bool,
     protected_reason: Option<String>,
 }
@@ -1748,6 +1749,21 @@ struct WindowWorkspace {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "lowercase")]
+/// Requested Windows show state applied after normal geometry is restored.
+enum RequestedWindowState {
+    Normal,
+    Minimized,
+    Maximized,
+}
+
+impl Default for RequestedWindowState {
+    fn default() -> Self {
+        Self::Normal
+    }
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 /// Represents one staged window mutation submitted by the workspace editor.
 struct WindowWorkspaceUpdate {
@@ -1758,6 +1774,8 @@ struct WindowWorkspaceUpdate {
     width: u32,
     height: u32,
     close: bool,
+    #[serde(default)]
+    state: RequestedWindowState,
 }
 
 #[derive(Deserialize)]
@@ -2022,7 +2040,7 @@ fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
         use windows::Win32::{
             Foundation::RECT,
             UI::WindowsAndMessaging::{
-                GetWindowPlacement, GetWindowRect, GetWindowThreadProcessId, IsIconic,
+                GetWindowPlacement, GetWindowRect, GetWindowThreadProcessId, IsIconic, IsZoomed,
                 WINDOWPLACEMENT,
             },
         };
@@ -2042,10 +2060,11 @@ fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
                 }
                 let name = application_process_name(pid);
                 let minimized = unsafe { IsIconic(handle).as_bool() };
+                let maximized = unsafe { IsZoomed(handle).as_bool() };
                 let mut bounds = RECT::default();
 
-                // Minimized windows use an off-screen sentinel; their normal bounds remain editable.
-                let geometry_result = if minimized {
+                // Non-normal windows expose their editable restore bounds through WINDOWPLACEMENT.
+                let geometry_result = if minimized || maximized {
                     let mut placement = WINDOWPLACEMENT {
                         length: size_of::<WINDOWPLACEMENT>() as u32,
                         ..Default::default()
@@ -2074,6 +2093,7 @@ fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
                     width,
                     height,
                     minimized,
+                    maximized,
                     protected: protected_reason.is_some(),
                     protected_reason,
                 })
@@ -2166,8 +2186,8 @@ fn apply_window_workspace(request: ApplyWindowWorkspaceRequest) -> Result<(), St
         use windows::Win32::{
             Foundation::{LPARAM, WPARAM},
             UI::WindowsAndMessaging::{
-                PostMessageW, SetWindowPos, ShowWindow, SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE,
-                WM_CLOSE,
+                PostMessageW, SetWindowPos, ShowWindow, SWP_NOACTIVATE, SWP_NOZORDER, SW_MAXIMIZE,
+                SW_MINIMIZE, SW_RESTORE, WM_CLOSE,
             },
         };
 
@@ -2233,6 +2253,15 @@ fn apply_window_workspace(request: ApplyWindowWorkspaceRequest) -> Result<(), St
                 )
             }
             .map_err(|error| command_error("Windows could not apply the window layout", error))?;
+            match update.state {
+                RequestedWindowState::Normal => {}
+                RequestedWindowState::Minimized => {
+                    let _ = unsafe { ShowWindow(handle, SW_MINIMIZE) };
+                }
+                RequestedWindowState::Maximized => {
+                    let _ = unsafe { ShowWindow(handle, SW_MAXIMIZE) };
+                }
+            }
         }
         return Ok(());
     }
