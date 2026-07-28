@@ -4,6 +4,7 @@ import { BatteryStatus } from "./components/BatteryStatus";
 import { BluetoothWidget } from "./components/BluetoothWidget";
 import { ClockWidget } from "./components/ClockWidget";
 import { PomodoroTimer } from "./components/PomodoroTimer";
+import { KeyboardShortcutControls } from "./components/KeyboardShortcuts";
 import { QuickSchedule } from "./components/QuickSchedule";
 import { SpotifyWidget } from "./components/SpotifyWidget";
 import { SystemVitalsWidget } from "./components/SystemVitalsWidget";
@@ -52,6 +53,7 @@ export default function App() {
               <Power size={11} strokeWidth={1.9} className="text-signal-300" />
               <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-stone-500">System ready</span>
             </div>
+            <KeyboardShortcutControls />
             <TaskManager />
             <QuickSchedule />
             <BatteryStatus />

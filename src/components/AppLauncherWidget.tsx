@@ -37,6 +37,11 @@ type Launcher = {
 type StoredLauncher = Pick<Launcher, "id" | "label" | "detail" | "kind" | "target">;
 
 const CUSTOM_LAUNCHERS_STORAGE_KEY = "control-panel.custom-launchers";
+const launcherShortcutCodes = [
+  "Digit1", "Digit2", "Digit3", "Digit4", "Digit5", "Digit6", "Digit7", "Digit8", "Digit9", "Digit0",
+  "KeyA", "KeyB", "KeyC", "KeyD", "KeyE", "KeyF", "KeyG", "KeyH", "KeyI", "KeyM", "KeyN", "KeyQ", "KeyR", "KeyT", "KeyU", "KeyV", "KeyW", "KeyX", "KeyY", "KeyZ",
+];
+const MAX_LAUNCHERS = launcherShortcutCodes.length * 2;
 const launchers: Launcher[] = [
   { id: "minecraft", label: "Minecraft", detail: "Launcher", icon: Gamepad2, kind: "app", target: "Minecraft Launcher" },
   { id: "chrome", label: "Chrome", detail: "Browser", icon: Chrome, kind: "app", target: "Chrome" },
@@ -64,7 +69,7 @@ function initialCustomLaunchers(): Launcher[] {
   try {
     const stored = JSON.parse(window.localStorage.getItem(CUSTOM_LAUNCHERS_STORAGE_KEY) ?? "[]");
     if (!Array.isArray(stored)) return [];
-    return stored.flatMap((item: Partial<StoredLauncher>) => {
+    return stored.slice(0, MAX_LAUNCHERS - launchers.length).flatMap((item: Partial<StoredLauncher>) => {
       if (
         typeof item.id !== "string" ||
         typeof item.label !== "string" ||
@@ -86,6 +91,17 @@ function initialCustomLaunchers(): Launcher[] {
   } catch {
     return [];
   }
+}
+
+/**
+ * Assigns stable order-based mappings to built-in and custom quick links.
+ * @param index - Zero-based position in the visible launcher collection.
+ * @returns A code-based shortcut combination understood by the global controller.
+ */
+function launcherShortcut(index: number) {
+  const shifted = index >= launcherShortcutCodes.length;
+  const code = launcherShortcutCodes[index % launcherShortcutCodes.length];
+  return `Control+Alt+${shifted ? "Shift+" : ""}${code}`;
 }
 
 /**
@@ -213,6 +229,10 @@ export function AppLauncherWidget() {
       setStatus("Add a name and destination first");
       return;
     }
+    if (launchers.length + customLaunchers.length >= MAX_LAUNCHERS) {
+      setStatus(`Quick links supports up to ${MAX_LAUNCHERS} shortcut mappings`);
+      return;
+    }
     if (launcherKind === "web") {
       try {
         const url = new URL(target);
@@ -251,7 +271,7 @@ export function AppLauncherWidget() {
     >
       <div className="relative flex h-full min-h-[250px] flex-col p-3.5">
         <div className="horizontal-collection grid min-h-0 flex-1 grid-flow-col grid-rows-2 auto-cols-[92px] gap-2.5 overflow-x-auto pb-1 sm:auto-cols-[104px] lg:auto-cols-[calc((100%-2.5rem)/5)]">
-          {allLaunchers.map((item) => {
+          {allLaunchers.map((item, index) => {
             const Icon = item.icon;
             const busy = busyTarget === item.label;
             return (
@@ -260,6 +280,11 @@ export function AppLauncherWidget() {
                   onClick={() => void launch(item)}
                   disabled={busyTarget !== null}
                   aria-label={`${item.label} ${item.detail}`}
+                  data-shortcut-combo={launcherShortcut(index)}
+                  data-shortcut-label={`Open ${item.label}`}
+                  data-shortcut-detail={item.detail}
+                  data-shortcut-group="Quick links"
+                  data-shortcut-order={index}
                   className="size-full"
                 >
                   <span className="flex h-full min-h-0 flex-col items-center justify-center px-1.5 py-2 text-center">

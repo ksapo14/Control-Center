@@ -409,6 +409,11 @@ export function PomodoroTimer() {
           disabled={!timerActive && remainingSeconds === 0}
           selected={timerActive}
           aria-label={completed ? "Dismiss completed Pomodoro and reset" : running ? "Pause Pomodoro timer" : "Play Pomodoro timer"}
+          data-shortcut-combo="Control+Alt+KeyP"
+          data-shortcut-label="Start / pause Pomodoro"
+          data-shortcut-detail="Toggles the current timer"
+          data-shortcut-group="Pomodoro"
+          data-shortcut-order="0"
           title={completed ? "Reset" : running ? "Pause" : "Play"}
           className={`grid place-items-center rounded-full ${focused ? "size-14" : "size-11"}`}
         >

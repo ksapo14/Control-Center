@@ -465,6 +465,11 @@ export function TaskManager() {
         className="h-11 px-3 sm:px-4"
         aria-haspopup="dialog"
         aria-label="Arrange open applications"
+        data-shortcut-combo="Control+Alt+KeyO"
+        data-shortcut-label="Open app workspace"
+        data-shortcut-detail="Arrange windows across screens"
+        data-shortcut-group="Control panel"
+        data-shortcut-order="1"
       >
         <span className="flex items-center gap-2.5">
           <AppWindow size={18} strokeWidth={1.7} className="text-signal-300" />

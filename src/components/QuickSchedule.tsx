@@ -356,6 +356,11 @@ export function QuickSchedule() {
         onClick={showDialog}
         className="h-9 px-2.5 sm:px-3"
         aria-haspopup="dialog"
+        data-shortcut-combo="Control+Alt+KeyS"
+        data-shortcut-label="Open Quick Schedule"
+        data-shortcut-detail="Create a calendar event"
+        data-shortcut-group="Control panel"
+        data-shortcut-order="0"
       >
         <span className="flex items-center gap-2">
           <CalendarPlus size={15} strokeWidth={1.7} className="text-signal-300" />

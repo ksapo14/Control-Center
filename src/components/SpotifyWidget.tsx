@@ -517,18 +517,23 @@ export function SpotifyWidget() {
               </div>
 
               <div className="flex items-center gap-1.5">
-                <button type="button" aria-label="Previous Spotify track" onClick={() => void controlPlayback("previous")} disabled={controlBusy} className="deck-button spotify-transport-button disabled:cursor-wait disabled:opacity-40">
+                <button type="button" aria-label="Previous Spotify track" data-shortcut-combo="Control+Alt+KeyJ" data-shortcut-label="Previous Spotify track" data-shortcut-detail="Transport backward" data-shortcut-group="Spotify" data-shortcut-order="0" onClick={() => void controlPlayback("previous")} disabled={controlBusy} className="deck-button spotify-transport-button disabled:cursor-wait disabled:opacity-40">
                   <SkipBack size={19} fill="currentColor" strokeWidth={1.5} />
                 </button>
                 <TactileButton
                   aria-label={playback.isPlaying ? "Pause Spotify" : "Play Spotify"}
+                  data-shortcut-combo="Control+Alt+KeyK"
+                  data-shortcut-label="Play / pause Spotify"
+                  data-shortcut-detail="Toggles current playback"
+                  data-shortcut-group="Spotify"
+                  data-shortcut-order="1"
                   onClick={() => void controlPlayback(playback.isPlaying ? "pause" : "play")}
                   disabled={controlBusy}
                   className="mx-1 grid size-12 place-items-center rounded-full"
                 >
                   {playback.isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" className="translate-x-px" />}
                 </TactileButton>
-                <button type="button" aria-label="Next Spotify track" onClick={() => void controlPlayback("next")} disabled={controlBusy} className="deck-button spotify-transport-button disabled:cursor-wait disabled:opacity-40">
+                <button type="button" aria-label="Next Spotify track" data-shortcut-combo="Control+Alt+KeyL" data-shortcut-label="Next Spotify track" data-shortcut-detail="Transport forward" data-shortcut-group="Spotify" data-shortcut-order="2" onClick={() => void controlPlayback("next")} disabled={controlBusy} className="deck-button spotify-transport-button disabled:cursor-wait disabled:opacity-40">
                   <SkipForward size={19} fill="currentColor" strokeWidth={1.5} />
                 </button>
               </div>

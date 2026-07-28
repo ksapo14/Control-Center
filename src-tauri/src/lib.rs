@@ -1704,14 +1704,6 @@ fn media_control(action: String) -> Result<(), String> {
     }
 }
 
-#[derive(Deserialize)]
-struct RawOpenApplication {
-    pid: u32,
-    name: String,
-    title: String,
-    handle: i64,
-}
-
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 /// Frontend-safe window metadata with geometry and safety details.
@@ -1890,6 +1882,131 @@ fn application_protection(pid: u32, name: &str) -> Option<String> {
     is_windows_shell.then(|| "Windows shell process is protected".into())
 }
 
+#[cfg(target_os = "windows")]
+/// Enumerates independent visible top-level windows instead of collapsing them by process.
+///
+/// # Returns
+/// Every titled application window eligible for workspace management.
+///
+/// # Errors
+/// Returns an error when Windows rejects top-level window enumeration.
+fn visible_application_windows() -> Result<Vec<windows::Win32::Foundation::HWND>, String> {
+    use windows::{
+        core::BOOL,
+        Win32::{
+            Foundation::{HWND, LPARAM},
+            UI::WindowsAndMessaging::{
+                EnumWindows, GetWindowLongW, GetWindowTextLengthW, IsWindowVisible, GWL_EXSTYLE,
+                WS_EX_TOOLWINDOW,
+            },
+        },
+    };
+
+    unsafe extern "system" fn collect_window(handle: HWND, data: LPARAM) -> BOOL {
+        if !IsWindowVisible(handle).as_bool() || GetWindowTextLengthW(handle) <= 0 {
+            return BOOL(1);
+        }
+
+        // Tool palettes and floating helpers are not independently manageable app windows.
+        let extended_style = GetWindowLongW(handle, GWL_EXSTYLE) as u32;
+        if extended_style & WS_EX_TOOLWINDOW.0 != 0 {
+            return BOOL(1);
+        }
+
+        let windows = &mut *(data.0 as *mut Vec<HWND>);
+        windows.push(handle);
+        BOOL(1)
+    }
+
+    let mut windows = Vec::new();
+    unsafe {
+        EnumWindows(
+            Some(collect_window),
+            LPARAM((&mut windows as *mut Vec<windows::Win32::Foundation::HWND>) as isize),
+        )
+    }
+    .map_err(|error| {
+        command_error(
+            "Windows could not enumerate open application windows",
+            error,
+        )
+    })?;
+    Ok(windows)
+}
+
+#[cfg(target_os = "windows")]
+/// Reads a top-level window's full Unicode title.
+///
+/// # Arguments
+/// * `handle` - Native window handle returned by `EnumWindows`.
+///
+/// # Returns
+/// The trimmed title, or `None` when it disappears during enumeration.
+fn application_window_title(handle: windows::Win32::Foundation::HWND) -> Option<String> {
+    use windows::Win32::UI::WindowsAndMessaging::{GetWindowTextLengthW, GetWindowTextW};
+
+    let length = unsafe { GetWindowTextLengthW(handle) };
+    if length <= 0 {
+        return None;
+    }
+    let mut buffer = vec![0_u16; length as usize + 1];
+    let copied = unsafe { GetWindowTextW(handle, &mut buffer) };
+    if copied <= 0 {
+        return None;
+    }
+    let title = String::from_utf16_lossy(&buffer[..copied as usize]);
+    (!title.trim().is_empty()).then(|| title.trim().to_string())
+}
+
+#[cfg(target_os = "windows")]
+/// Resolves a process executable name without assuming one main window per process.
+///
+/// # Arguments
+/// * `pid` - Owner process identifier read from a native window.
+///
+/// # Returns
+/// The executable stem, or a stable PID-based fallback when access is restricted.
+fn application_process_name(pid: u32) -> String {
+    use std::path::Path;
+    use windows::{
+        core::PWSTR,
+        Win32::{
+            Foundation::CloseHandle,
+            System::Threading::{
+                OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
+                PROCESS_QUERY_LIMITED_INFORMATION,
+            },
+        },
+    };
+
+    let process = match unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) } {
+        Ok(process) => process,
+        Err(_) => return format!("Process {pid}"),
+    };
+    let mut buffer = vec![0_u16; 32_768];
+    let mut length = buffer.len() as u32;
+    let result = unsafe {
+        QueryFullProcessImageNameW(
+            process,
+            PROCESS_NAME_WIN32,
+            PWSTR(buffer.as_mut_ptr()),
+            &mut length,
+        )
+    };
+    let _ = unsafe { CloseHandle(process) };
+    if result.is_err() || length == 0 {
+        return format!("Process {pid}");
+    }
+
+    let executable = String::from_utf16_lossy(&buffer[..length as usize]);
+    Path::new(&executable)
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("Process {pid}"))
+}
+
 #[tauri::command]
 /// Lists visible top-level Windows applications with force-close safety metadata.
 ///
@@ -1897,32 +2014,33 @@ fn application_protection(pid: u32, name: &str) -> Option<String> {
 /// A title-sorted snapshot of applications that own visible windows.
 ///
 /// # Errors
-/// Returns an error when PowerShell enumeration or JSON parsing fails.
+/// Returns an error when monitor or native top-level window enumeration fails.
 fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
     #[cfg(target_os = "windows")]
     {
-        use std::{ffi::c_void, mem::size_of};
+        use std::mem::size_of;
         use windows::Win32::{
-            Foundation::{HWND, RECT},
+            Foundation::RECT,
             UI::WindowsAndMessaging::{
-                GetWindowPlacement, GetWindowRect, IsIconic, WINDOWPLACEMENT,
+                GetWindowPlacement, GetWindowRect, GetWindowThreadProcessId, IsIconic,
+                WINDOWPLACEMENT,
             },
         };
 
         // --- Visible Window Snapshot ---
-        let script = r#"[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $apps=@(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } | ForEach-Object { [pscustomobject]@{ pid=[uint32]$_.Id; name=$_.ProcessName; title=$_.MainWindowTitle; handle=[int64]$_.MainWindowHandle } }); ConvertTo-Json -InputObject $apps -Compress"#;
-        let output = powershell_output(script)?;
-        if output.is_empty() {
-            return Ok(Vec::new());
-        }
         let monitors = display_monitors()?;
 
         // --- Protection and Stable Ordering ---
-        let mut applications = serde_json::from_str::<Vec<RawOpenApplication>>(&output)
-            .map_err(|error| command_error("Open applications could not be parsed", error))?
+        let mut applications = visible_application_windows()?
             .into_iter()
-            .filter_map(|application| {
-                let handle = HWND(application.handle as isize as *mut c_void);
+            .filter_map(|handle| {
+                let title = application_window_title(handle)?;
+                let mut pid = 0_u32;
+                unsafe { GetWindowThreadProcessId(handle, Some(&mut pid)) };
+                if pid == 0 {
+                    return None;
+                }
+                let name = application_process_name(pid);
                 let minimized = unsafe { IsIconic(handle).as_bool() };
                 let mut bounds = RECT::default();
 
@@ -1944,12 +2062,12 @@ fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
                 let width = bounds.right.saturating_sub(bounds.left).max(1) as u32;
                 let height = bounds.bottom.saturating_sub(bounds.top).max(1) as u32;
                 let monitor = monitor_for_rect(&monitors, bounds.left, bounds.top, width, height)?;
-                let protected_reason = application_protection(application.pid, &application.name);
+                let protected_reason = application_protection(pid, &name);
                 Some(OpenApplication {
-                    pid: application.pid,
-                    name: application.name,
-                    title: application.title,
-                    handle: application.handle as u64,
+                    pid,
+                    name,
+                    title,
+                    handle: handle.0 as usize as u64,
                     monitor_id: monitor.id.clone(),
                     x: bounds.left,
                     y: bounds.top,
@@ -1967,6 +2085,7 @@ fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
                 .to_ascii_lowercase()
                 .cmp(&right.title.to_ascii_lowercase())
                 .then(left.pid.cmp(&right.pid))
+                .then(left.handle.cmp(&right.handle))
         });
         return Ok(applications);
     }
