@@ -1,4 +1,3 @@
-import { Gauge, Power } from "lucide-react";
 import { AppLauncherWidget } from "./components/AppLauncherWidget";
 import { BatteryStatus } from "./components/BatteryStatus";
 import { BluetoothWidget } from "./components/BluetoothWidget";
@@ -9,6 +8,7 @@ import { KeyboardShortcutControls } from "./components/KeyboardShortcuts";
 import { QuickSchedule } from "./components/QuickSchedule";
 import { SpotifyWidget } from "./components/SpotifyWidget";
 import { SystemVitalsWidget } from "./components/SystemVitalsWidget";
+import { TaskHabitTracker } from "./components/TaskHabitTracker";
 import { TaskManager } from "./components/TaskManager";
 import { TitleBarActions } from "./components/TitleBarActions";
 import { VolumeWidget } from "./components/VolumeWidget";
@@ -39,29 +39,13 @@ export default function App() {
           className="flex h-14 shrink-0 items-center justify-between px-1 sm:px-2"
           data-tauri-drag-region
         >
-          <div className="flex min-w-0 items-center gap-3" data-tauri-drag-region>
-            <span className="grid size-8 shrink-0 place-items-center rounded-[9px] border border-black/60 border-t-white/15 bg-gradient-to-br from-[#343835] to-[#1b1d1c] text-signal-300 shadow-skeuo-raised">
-              <Gauge size={17} strokeWidth={1.6} />
-            </span>
-            <div className="min-w-0" data-tauri-drag-region>
-              <h1 className="truncate text-sm font-semibold tracking-[-0.01em] text-stone-200" data-tauri-drag-region>
-                Control Panel
-              </h1>
-              <p className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.16em] text-stone-600" data-tauri-drag-region>
-                Personal console
-              </p>
-            </div>
-          </div>
-
-          <div className="header-control-strip flex min-w-0 flex-1 items-center justify-end gap-1.5 overflow-x-auto sm:gap-2.5">
+          <div className="min-w-6 flex-1 self-stretch" data-tauri-drag-region />
+          <div className="header-control-strip flex min-w-0 max-w-full flex-shrink items-center justify-end gap-1.5 overflow-x-auto sm:gap-2.5">
             <ThemePicker />
-            <div className="hidden items-center gap-2 rounded-lg border border-black/50 bg-black/10 px-2.5 py-1.5 shadow-well sm:flex">
-              <Power size={11} strokeWidth={1.9} className="text-signal-300" />
-              <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-stone-500">System ready</span>
-            </div>
             <ControlCenterControls />
             <KeyboardShortcutControls />
             <TaskManager />
+            <TaskHabitTracker />
             <Planning />
             <QuickSchedule />
             <BatteryStatus />

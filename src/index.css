@@ -356,6 +356,75 @@ button {
   opacity: 0.58;
 }
 
+.schedule-table-input {
+  width: 100%;
+  height: 36px;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  outline: none;
+  background: transparent;
+  color: #d6d3d1;
+  padding: 0 8px;
+  font-size: 11px;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.schedule-table-input::placeholder {
+  color: #57534e;
+}
+
+.schedule-table-input:hover {
+  background: rgba(255, 255, 255, 0.022);
+}
+
+.schedule-table-input:focus {
+  border-color: rgb(var(--signal-400) / 0.42);
+  background: #080908;
+}
+
+.schedule-table-input::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(70%) sepia(4%) saturate(420%) hue-rotate(350deg);
+  opacity: 0.45;
+}
+
+.schedule-table-input option {
+  background: #101210;
+  color: #d6d3d1;
+}
+
+.tracker-heading {
+  padding: 10px 8px;
+  color: #57534e;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.tracker-delete-button {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 6px;
+  color: #44403c;
+  transition: color 140ms ease, background-color 140ms ease;
+}
+
+.tracker-delete-button:hover {
+  background: rgba(69, 10, 10, 0.2);
+  color: #fca5a5;
+}
+
+.tracker-delete-button:focus-visible {
+  outline: 2px solid rgb(var(--signal-400) / 0.8);
+  outline-offset: 1px;
+}
+
 .clock-bezel {
   border: 1px solid rgba(0, 0, 0, 0.75);
   background: linear-gradient(145deg, #252825, #101210 60%, #090a09);

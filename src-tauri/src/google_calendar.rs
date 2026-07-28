@@ -795,8 +795,8 @@ fn create_events_blocking(
     app: tauri::AppHandle,
     request: BatchCreateCalendarEventsRequest,
 ) -> Result<BatchCreateCalendarEventsResult, String> {
-    if request.events.is_empty() || request.events.len() > 25 {
-        return Err("Schedule between 1 and 25 events at a time".into());
+    if request.events.is_empty() {
+        return Err("Schedule at least one event".into());
     }
     let validated = request
         .events

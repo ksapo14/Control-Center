@@ -17,7 +17,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { FormEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import type { FormEvent } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
 
@@ -63,6 +63,15 @@ type FailedEvent = {
 type BatchCreateResult = {
   created: CreatedEvent[];
   failed: FailedEvent[];
+};
+
+type ManualEventRow = {
+  id: string;
+  date: string;
+  title: string;
+  from: string;
+  to: string;
+  colorId: string;
 };
 
 type ScheduleMode = "gemini" | "manual";
@@ -111,6 +120,29 @@ function initialSchedule() {
   };
 }
 
+function createManualRow(schedule = initialSchedule(), colorId = "7"): ManualEventRow {
+  return {
+    id: globalThis.crypto.randomUUID(),
+    date: schedule.date,
+    title: "",
+    from: schedule.from,
+    to: schedule.to,
+    colorId,
+  };
+}
+
+function nextManualSchedule(previous?: ManualEventRow) {
+  if (!previous) return initialSchedule();
+  const start = new Date(`${previous.date}T${previous.to}:00`);
+  if (Number.isNaN(start.getTime())) return initialSchedule();
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  return {
+    date: localDateValue(start),
+    from: localTimeValue(start),
+    to: localTimeValue(end),
+  };
+}
+
 function editableDraft(event: ScheduleDraft): ScheduleDraft {
   return {
     ...event,
@@ -121,7 +153,6 @@ function editableDraft(event: ScheduleDraft): ScheduleDraft {
 
 /** Provides AI-assisted multi-event drafting and manual Google Calendar creation. */
 export function QuickSchedule() {
-  const defaults = initialSchedule();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<ScheduleMode>("gemini");
   const [status, setStatus] = useState<CalendarStatus>({ configured: false, connected: false });
@@ -129,11 +160,7 @@ export function QuickSchedule() {
   const [instructions, setInstructions] = useState("");
   const [drafts, setDrafts] = useState<ScheduleDraft[]>([]);
   const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
-  const [title, setTitle] = useState("");
-  const [date, setDate] = useState(defaults.date);
-  const [from, setFrom] = useState(defaults.from);
-  const [to, setTo] = useState(defaults.to);
-  const [colorId, setColorId] = useState("7");
+  const [manualRows, setManualRows] = useState<ManualEventRow[]>(() => [createManualRow()]);
   const [busy, setBusy] = useState<BusyAction>(null);
   const [notice, setNotice] = useState("");
   const [noticeKind, setNoticeKind] = useState<"info" | "error" | "success">("info");
@@ -174,10 +201,7 @@ export function QuickSchedule() {
   };
 
   const showDialog = () => {
-    const schedule = initialSchedule();
-    setDate(schedule.date);
-    setFrom(schedule.from);
-    setTo(schedule.to);
+    setManualRows([createManualRow()]);
     setCreated([]);
     setOpen(true);
     void refreshStatus();
@@ -372,32 +396,61 @@ export function QuickSchedule() {
     }
   };
 
-  const createEvent = async (event: FormEvent) => {
+  const updateManualRow = (id: string, update: Partial<ManualEventRow>) => {
+    setManualRows((current) => current.map((row) => (row.id === id ? { ...row, ...update, id } : row)));
+  };
+
+  const addManualRow = () => {
+    setManualRows((current) => {
+      const previous = current[current.length - 1];
+      return [...current, createManualRow(nextManualSchedule(previous), previous?.colorId ?? "7")];
+    });
+  };
+
+  const removeManualRow = (id: string) => {
+    setManualRows((current) => {
+      const remaining = current.filter((row) => row.id !== id);
+      return remaining.length > 0 ? remaining : [createManualRow()];
+    });
+  };
+
+  const createManualEvents = async (event: FormEvent) => {
     event.preventDefault();
     setCreated([]);
-    if (!title.trim()) return showNotice("Add an event title.", "error");
-    const startDate = new Date(`${date}T${from}:00`);
-    const endDate = new Date(`${date}T${to}:00`);
-    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
-      return showNotice("Choose an end time after the start time.", "error");
+    if (manualRows.length === 0) return showNotice("Add at least one event row.", "error");
+
+    const events = [];
+    for (const [index, row] of manualRows.entries()) {
+      const startDate = new Date(`${row.date}T${row.from}:00`);
+      const endDate = new Date(`${row.date}T${row.to}:00`);
+      if (!row.title.trim()) return showNotice(`Row ${index + 1} needs a title.`, "error");
+      if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime()) || endDate <= startDate) {
+        return showNotice(`Row ${index + 1} needs an end time after its start time.`, "error");
+      }
+      events.push({
+        title: row.title.trim(),
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+        description: null,
+        location: null,
+        colorId: row.colorId,
+      });
     }
 
     setBusy("save");
-    showNotice("Adding the event to your primary calendar...");
+    showNotice(`Adding ${events.length} event${events.length === 1 ? "" : "s"} to your primary calendar...`);
     try {
-      const result = await invoke<CreatedEvent>("create_google_calendar_event", {
-        request: {
-          title: title.trim(),
-          start: startDate.toISOString(),
-          end: endDate.toISOString(),
-          description: null,
-          location: null,
-          colorId,
-        },
-      });
-      setCreated([result]);
-      showNotice(`${result.summary} was added to Google Calendar.`, "success");
-      setTitle("");
+      const result = await invoke<BatchCreateResult>("create_google_calendar_events", { request: { events } });
+      setCreated(result.created);
+      if (result.failed.length === 0) {
+        setManualRows([createManualRow()]);
+        showNotice(`Added ${result.created.length} event${result.created.length === 1 ? "" : "s"} to Google Calendar.`, "success");
+      } else {
+        const failedIndexes = new Set(result.failed.map((item) => item.index));
+        setManualRows((current) => current.filter((_, index) => failedIndexes.has(index)));
+        const detail = result.failed.map((item) => `${item.title}: ${item.error}`).join(" ");
+        showNotice(`${result.created.length} added; ${result.failed.length} failed. ${detail}`, "error");
+      }
     } catch (error) {
       showNotice(errorMessage(error), "error");
     } finally {
@@ -408,15 +461,6 @@ export function QuickSchedule() {
   const openCreatedEvent = async (event: CreatedEvent) => {
     if (isTauriRuntime()) await openExternal(event.htmlLink);
     else window.open(event.htmlLink, "_blank", "noopener,noreferrer");
-  };
-
-  const changeManualColor = (event: ReactKeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const current = calendarColors.findIndex((color) => color.id === colorId);
-    const direction = event.key === "ArrowRight" ? 1 : -1;
-    const next = (current + direction + calendarColors.length) % calendarColors.length;
-    setColorId(calendarColors[next].id);
   };
 
   const isWorking = busy !== null;
@@ -510,7 +554,7 @@ export function QuickSchedule() {
 
                 <div className="mb-5 grid grid-cols-2 gap-1 rounded-[11px] border border-black/70 bg-black/30 p-1" role="tablist" aria-label="Scheduling method">
                   <button type="button" role="tab" aria-selected={mode === "gemini"} onClick={() => setMode("gemini")} className={`flex h-9 items-center justify-center gap-2 rounded-[8px] text-[11px] font-semibold transition ${mode === "gemini" ? "border border-white/[0.08] bg-white/[0.055] text-stone-100 shadow-skeuo-raised" : "text-stone-500 hover:text-stone-300"}`}><Sparkles size={14} className="text-signal-300" /> Describe with Gemini</button>
-                  <button type="button" role="tab" aria-selected={mode === "manual"} onClick={() => setMode("manual")} className={`flex h-9 items-center justify-center gap-2 rounded-[8px] text-[11px] font-semibold transition ${mode === "manual" ? "border border-white/[0.08] bg-white/[0.055] text-stone-100 shadow-skeuo-raised" : "text-stone-500 hover:text-stone-300"}`}><Clock3 size={14} /> Manual event</button>
+                  <button type="button" role="tab" aria-selected={mode === "manual"} onClick={() => setMode("manual")} className={`flex h-9 items-center justify-center gap-2 rounded-[8px] text-[11px] font-semibold transition ${mode === "manual" ? "border border-white/[0.08] bg-white/[0.055] text-stone-100 shadow-skeuo-raised" : "text-stone-500 hover:text-stone-300"}`}><Clock3 size={14} /> Manual events</button>
                 </div>
 
                 {mode === "gemini" ? (
@@ -532,7 +576,7 @@ export function QuickSchedule() {
                         className="schedule-input h-28 resize-y py-3 leading-relaxed"
                       />
                       <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-[10px] leading-relaxed text-stone-600">Use normal language. Dates are resolved in {timezone}; every draft stays editable.</p>
+                        <p className="text-[10px] leading-relaxed text-stone-600">Use normal language. Dates resolve in {timezone}; drafts stay editable and capacity spikes retry automatically.</p>
                         <TactileButton type="submit" disabled={!geminiStatus.configured || isWorking || !instructions.trim()} className="h-10 shrink-0 px-4">
                           <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100">{busy === "draft" ? <LoaderCircle size={15} className="animate-spin text-signal-300" /> : <Sparkles size={15} className="text-signal-300" />} Draft events</span>
                         </TactileButton>
@@ -607,37 +651,70 @@ export function QuickSchedule() {
                     )}
                   </div>
                 ) : (
-                  <form id="manual-schedule-form" onSubmit={(event) => void createEvent(event)} role="tabpanel">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="sm:col-span-2">
-                        <span className="schedule-label">Title</span>
-                        <input ref={titleRef} type="text" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="What are you making time for?" maxLength={512} className="schedule-input" autoComplete="off" />
-                      </label>
-                      <label>
-                        <span className="schedule-label">Date</span>
-                        <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className="schedule-input" required />
-                      </label>
+                  <form id="manual-schedule-form" onSubmit={(event) => void createManualEvents(event)} role="tabpanel">
+                    <div className="mb-3 flex items-end justify-between gap-3">
                       <div>
-                        <span className="schedule-label">Time</span>
-                        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                          <label className="sr-only" htmlFor="schedule-from">From time</label>
-                          <input id="schedule-from" type="time" value={from} onChange={(event) => setFrom(event.target.value)} className="schedule-input min-w-0" required />
-                          <span className="font-mono text-[10px] uppercase text-stone-600">to</span>
-                          <label className="sr-only" htmlFor="schedule-to">To time</label>
-                          <input id="schedule-to" type="time" value={to} onChange={(event) => setTo(event.target.value)} className="schedule-input min-w-0" required />
-                        </div>
+                        <h3 className="text-sm font-semibold text-stone-200">Event table</h3>
+                        <p className="mt-1 text-[10px] leading-relaxed text-stone-600">Each row becomes a separate event in {timezone}.</p>
                       </div>
-                      <fieldset className="sm:col-span-2">
-                        <legend className="schedule-label">Event color</legend>
-                        <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Google Calendar event color">
-                          {calendarColors.map((color) => (
-                            <button key={color.id} type="button" role="radio" aria-checked={colorId === color.id} aria-label={color.name} title={color.name} onClick={() => setColorId(color.id)} onKeyDown={changeManualColor} className={`relative grid size-8 place-items-center rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-graphite-800 ${colorId === color.id ? "scale-105 border-white/45 shadow-skeuo-raised" : "border-black/70 opacity-65 hover:opacity-100"}`} style={{ backgroundColor: color.value }}>
-                              {colorId === color.id && <Check size={14} strokeWidth={2.5} className="text-white drop-shadow" />}
-                            </button>
-                          ))}
-                        </div>
-                      </fieldset>
+                      <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-stone-600">{manualRows.length} row{manualRows.length === 1 ? "" : "s"}</span>
                     </div>
+
+                    <div className="overflow-x-auto rounded-[10px] border border-white/[0.06] bg-black/10">
+                      <table className="w-full min-w-[720px] table-fixed border-collapse" aria-label="Manual calendar events">
+                        <colgroup>
+                          <col className="w-[145px]" />
+                          <col />
+                          <col className="w-[105px]" />
+                          <col className="w-[105px]" />
+                          <col className="w-[135px]" />
+                          <col className="w-[42px]" />
+                        </colgroup>
+                        <thead>
+                          <tr className="border-b border-white/[0.06] bg-white/[0.018]">
+                            {['Date', 'Title', 'Time from', 'Time to', 'Color'].map((heading) => (
+                              <th key={heading} scope="col" className="px-2.5 py-2.5 text-left font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-600">{heading}</th>
+                            ))}
+                            <th scope="col"><span className="sr-only">Remove</span></th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {manualRows.map((row, index) => (
+                            <tr key={row.id} className="border-b border-white/[0.045] last:border-b-0">
+                              <td className="p-1.5">
+                                <label className="sr-only" htmlFor={`manual-date-${row.id}`}>Event {index + 1} date</label>
+                                <input id={`manual-date-${row.id}`} type="date" value={row.date} onChange={(event) => updateManualRow(row.id, { date: event.target.value })} className="schedule-table-input" required />
+                              </td>
+                              <td className="p-1.5">
+                                <label className="sr-only" htmlFor={`manual-title-${row.id}`}>Event {index + 1} title</label>
+                                <input ref={index === 0 ? titleRef : undefined} id={`manual-title-${row.id}`} type="text" value={row.title} onChange={(event) => updateManualRow(row.id, { title: event.target.value })} placeholder="Event title" maxLength={512} className="schedule-table-input" autoComplete="off" required />
+                              </td>
+                              <td className="p-1.5">
+                                <label className="sr-only" htmlFor={`manual-from-${row.id}`}>Event {index + 1} start time</label>
+                                <input id={`manual-from-${row.id}`} type="time" value={row.from} onChange={(event) => updateManualRow(row.id, { from: event.target.value })} className="schedule-table-input" required />
+                              </td>
+                              <td className="p-1.5">
+                                <label className="sr-only" htmlFor={`manual-to-${row.id}`}>Event {index + 1} end time</label>
+                                <input id={`manual-to-${row.id}`} type="time" value={row.to} onChange={(event) => updateManualRow(row.id, { to: event.target.value })} className="schedule-table-input" required />
+                              </td>
+                              <td className="p-1.5">
+                                <label className="sr-only" htmlFor={`manual-color-${row.id}`}>Event {index + 1} color</label>
+                                <select id={`manual-color-${row.id}`} value={row.colorId} onChange={(event) => updateManualRow(row.id, { colorId: event.target.value })} className="schedule-table-input cursor-pointer pr-1">
+                                  {calendarColors.map((color) => <option key={color.id} value={color.id}>{color.name}</option>)}
+                                </select>
+                              </td>
+                              <td className="p-1.5">
+                                <button type="button" onClick={() => removeManualRow(row.id)} disabled={isWorking} className="grid size-8 place-items-center rounded-[6px] text-stone-700 transition hover:bg-red-950/20 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 disabled:opacity-40" aria-label={`Remove event row ${index + 1}`}><Trash2 size={13} strokeWidth={1.8} /></button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <button type="button" onClick={addManualRow} disabled={isWorking} className="mt-3 flex h-9 items-center gap-2 rounded-[7px] border border-white/[0.07] px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-500 transition hover:border-white/[0.12] hover:bg-white/[0.025] hover:text-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400 disabled:opacity-40">
+                      <span aria-hidden="true" className="text-base font-normal leading-none text-signal-300">+</span> Add event row
+                    </button>
                   </form>
                 )}
 
@@ -659,8 +736,8 @@ export function QuickSchedule() {
                         <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100"><CalendarPlus size={15} className="text-signal-300" /> Schedule {drafts.length || "drafts"}</span>
                       </TactileButton>
                     ) : (
-                      <TactileButton type="submit" form="manual-schedule-form" disabled={!status.connected || isWorking} className="h-10 min-w-[142px] px-4">
-                        <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100"><CalendarPlus size={15} className="text-signal-300" /> Add to Calendar</span>
+                      <TactileButton type="submit" form="manual-schedule-form" disabled={!status.connected || isWorking || manualRows.length === 0} className="h-10 min-w-[160px] px-4">
+                        <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100"><CalendarPlus size={15} className="text-signal-300" /> Add {manualRows.length} to Calendar</span>
                       </TactileButton>
                     )}
                   </div>

@@ -1,13 +1,16 @@
 use chrono::DateTime;
+use rand::Rng;
 use reqwest::blocking::Client;
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::{env, fs, path::PathBuf, time::Duration};
+use std::{env, fs, path::PathBuf, thread, time::Duration};
 
 const GEMINI_MODEL: &str = "gemini-3.5-flash";
 const INTERACTIONS_ENDPOINT: &str = "https://generativelanguage.googleapis.com/v1beta/interactions";
 const MAX_INSTRUCTION_CHARS: usize = 6_000;
 const MAX_EVENTS: usize = 25;
+const MAX_REQUEST_ATTEMPTS: usize = 1;
 
 const SYSTEM_PROMPT: &str = r#"You are the calendar-draft compiler for Control Panel. Your only job is to convert the user's scheduling instructions into the exact structured event collection required by the response schema.
 
@@ -211,6 +214,31 @@ fn gemini_error(response: reqwest::blocking::Response) -> String {
     }
 }
 
+fn transient_status(status: StatusCode) -> bool {
+    status == StatusCode::REQUEST_TIMEOUT
+        || status == StatusCode::TOO_MANY_REQUESTS
+        || status.is_server_error()
+}
+
+/// Calculates bounded exponential backoff with jitter, honoring short Retry-After values.
+fn retry_delay(attempt: usize, retry_after: Option<u64>) -> Duration {
+    let exponential = 1_u64 << attempt.min(3);
+    let seconds = retry_after.unwrap_or(exponential).clamp(1, 15);
+    let jitter = rand::thread_rng().gen_range(0..=400);
+    Duration::from_secs(seconds) + Duration::from_millis(jitter)
+}
+
+fn retry_after_seconds(response: &reqwest::blocking::Response) -> Option<u64> {
+    response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse()
+        .ok()
+}
+
 fn clean_warning(value: String) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()).then(|| value.chars().take(300).collect())
@@ -319,15 +347,45 @@ fn parse_schedule_blocking(request: ParseScheduleRequest) -> Result<GeminiSchedu
         .timeout(Duration::from_secs(45))
         .build()
         .map_err(|error| format!("The Gemini client could not start: {error}"))?;
-    let response = client
-        .post(INTERACTIONS_ENDPOINT)
-        .header("x-goog-api-key", api_key)
-        .json(&body)
-        .send()
-        .map_err(|error| format!("Gemini could not be reached: {error}"))?;
-    if !response.status().is_success() {
-        return Err(gemini_error(response));
+    let mut successful_response = None;
+    for attempt in 0..MAX_REQUEST_ATTEMPTS {
+        let response = client
+            .post(INTERACTIONS_ENDPOINT)
+            .header("x-goog-api-key", &api_key)
+            .json(&body)
+            .send();
+        let response = match response {
+            Ok(response) => response,
+            Err(error)
+                if attempt + 1 < MAX_REQUEST_ATTEMPTS
+                    && (error.is_timeout() || error.is_connect()) =>
+            {
+                thread::sleep(retry_delay(attempt, None));
+                continue;
+            }
+            Err(error) => return Err(format!("Gemini could not be reached: {error}")),
+        };
+
+        if response.status().is_success() {
+            successful_response = Some(response);
+            break;
+        }
+
+        let retryable = transient_status(response.status());
+        let retry_after = retry_after_seconds(&response);
+        let error = gemini_error(response);
+        if !retryable || attempt + 1 == MAX_REQUEST_ATTEMPTS {
+            return Err(if retryable {
+                format!("{error} Gemini was attempted {MAX_REQUEST_ATTEMPTS} times automatically.")
+            } else {
+                error
+            });
+        }
+        thread::sleep(retry_delay(attempt, retry_after));
     }
+
+    let response = successful_response
+        .ok_or_else(|| "Gemini did not return a response after automatic retries.".to_string())?;
     let response: Value = response
         .json()
         .map_err(|_| "Gemini returned an unreadable response.".to_string())?;

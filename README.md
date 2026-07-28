@@ -20,7 +20,8 @@ Fork it, adapt the controls to your own computer, replace the integrations, rede
 - An application launcher for selected desktop apps, websites, and VS Code folders.
 - A task manager for viewing and force-closing visible application windows.
 - Spotify playback status, transport controls, and playlist shortcuts.
-- Gemini-assisted natural-language scheduling with editable single- or multi-event drafts, plus manual Google Calendar event creation.
+- Gemini-assisted natural-language scheduling with editable single- or multi-event drafts, plus a lightweight tabular editor for creating multiple manual Google Calendar events at once.
+- A local task checklist and habit tracker with due dates, daily/weekday/weekly rhythms, completion history, and calculated streaks.
 - A configurable Pomodoro timer with an audio-reactive focus background. Separate blobs respond to bass, midrange, and treble energy from Windows loopback audio.
 - Global media-key controls and native window minimize/close actions.
 
@@ -130,6 +131,8 @@ Several controls reflect the original personal setup and should be changed in a 
 - **Spotify shortcuts:** edit the playlist entries near the top of `src/components/SpotifyWidget.tsx`.
 - **Window behavior:** fullscreen mode, decorations, title, identifier, and bundling are configured in `src-tauri/tauri.conf.json`.
 - **Theme and layout:** global styling is in `src/index.css` and Tailwind configuration is in `tailwind.config.js`.
+- **Tasks and habits:** open **Tasks** in the top toolbar. Task rows support optional due dates; habit rows record completion against the local calendar date and calculate consecutive daily, weekday, or weekly streaks.
+- **App-group layouts:** choose **Open window layout editor after launch** while creating an app group. Launching that group closes Control Center, waits briefly for the application windows, and opens the Window Workspace canvas for manual placement. Saved Window Workspace profiles remain available for automatic layouts.
 
 Application discovery expects Chrome and VS Code in common Windows install locations. Minecraft Launcher and ChatGPT are resolved through the Windows Start Apps registry. A launcher will report an error when its target is not installed or has a different registered name.
 
@@ -156,6 +159,8 @@ For details, see Spotify's documentation for [PKCE authorization](https://develo
 ## Optional Google Calendar setup
 
 Quick Schedule creates reviewed events in the connected account's primary Google Calendar. It requests the `calendar.events` OAuth scope.
+
+The **Manual events** tab provides Date, Title, Time from, Time to, and Color columns. Add as many rows as needed, review the table, and submit the complete set with one **Add to Calendar** action. Successfully created rows are cleared; if Google rejects an individual event, that row remains available for correction.
 
 1. Create or select a project in [Google Cloud Console](https://console.cloud.google.com/).
 2. Enable the **Google Calendar API**.
@@ -191,7 +196,7 @@ The backend reads `GEMINI_API_KEY` from the process environment or a local `.env
 ### Gemini scheduling pipeline
 
 1. The React interface sends instructions, the current RFC 3339 timestamp, and the local IANA time zone to a Tauri command. It never receives the API key.
-2. The Rust backend calls Gemini's Interactions API with the key in the `x-goog-api-key` header, a strict calendar-only system instruction, and a closed JSON schema.
+2. The Rust backend calls Gemini's Interactions API with the key in the `x-goog-api-key` header, a strict calendar-only system instruction, and a closed JSON schema. Transient `408`, `429`, connection, timeout, and `5xx` failures are retried with bounded exponential backoff and jitter.
 3. The system instruction treats user text only as scheduling data, preserves explicit details, resolves relative dates against the supplied clock and time zone, defaults an omitted duration to 60 minutes, and flags ambiguities for review. It also rejects attempts inside the input to change roles, reveal instructions, or alter the output contract.
 4. The backend parses the structured response and independently checks event count, title length, RFC 3339 timestamps, chronological order, optional-field limits, and Calendar color IDs.
 5. Quick Schedule displays up to 25 editable drafts. A separate batch command validates the full edited set again before making Calendar API calls, and reports per-event failures without hiding successful creations.
@@ -215,8 +220,11 @@ The app does not include analytics or a remote telemetry service. It does intent
 - OAuth sign-in temporarily opens a listener on a random `127.0.0.1` port. A firewall or security product may ask for permission. The listener times out after three minutes.
 - The Pomodoro visualizer captures the current Windows output stream through WASAPI loopback only while the timer is active. Audio is analyzed in memory into bass, midrange, and treble energy; the implementation does not save or upload the audio.
 - Process titles, hardware telemetry, battery state, volume, and brightness are read locally for display.
+- Tasks, habit definitions, and habit completion dates are saved only in browser local storage under `control-panel.tasks-habits`. They are included in Control Center backup exports and removed by the local-data reset action.
 
 Tauri stores integration files in its application configuration directory, normally under the current Windows user's roaming AppData directory using the `com.local.controlpanel` identifier.
+
+Rebuilding or updating the app does not clear tasks, habits, plans, app groups, layout profiles, or other `control-panel.*` preferences. They persist in the WebView data associated with the unchanged `com.local.controlpanel` application identifier. Data is removed only when you deliberately use **Reset all Control Panel settings**, clear the application's WebView data, uninstall it while removing application data, or change the Tauri identifier. Use **Export backup** before those operations or before moving the app to another computer.
 
 ### Secrets and environment variables
 
@@ -246,6 +254,7 @@ Use this project at your own risk and review the source before trusting it with 
 .
 ├── src/                         React and TypeScript interface
 │   ├── components/              Dashboard widgets and dialogs
+│   │   └── TaskHabitTracker.tsx Local task and habit checklist
 │   └── lib/                     Frontend runtime helpers
 ├── src-tauri/
 │   ├── src/lib.rs               Native Windows commands and Tauri setup

@@ -53,6 +53,7 @@ export type AppGroup = {
   name: string;
   launcherIds: string[];
   layoutProfileId?: string | null;
+  openLayoutEditorAfterLaunch?: boolean;
 };
 
 export type AutomationTrigger =
@@ -368,7 +369,12 @@ export function ControlCenterProvider({ children }: { children: ReactNode }) {
     for (const launcherId of group.launcherIds) {
       if (clickDashboardAction(`[data-launcher-id="${CSS.escape(launcherId)}"]`)) launched += 1;
     }
-    if (group.layoutProfileId) {
+    if (group.openLayoutEditorAfterLaunch) {
+      // Wait for launched processes to create top-level windows, then hand off to the visual editor.
+      window.setTimeout(() => {
+        clickDashboardAction("[data-control-action='open-apps']");
+      }, 2_400);
+    } else if (group.layoutProfileId) {
       // Give newly launched processes time to create top-level windows before arranging them.
       window.setTimeout(() => {
         clickDashboardAction(`[data-layout-profile-id="${CSS.escape(group.layoutProfileId ?? "")}"]`);
@@ -377,7 +383,7 @@ export function ControlCenterProvider({ children }: { children: ReactNode }) {
     addNotification(
       group.name,
       launched === group.launcherIds.length
-        ? `${launched} app shortcut${launched === 1 ? "" : "s"} launched.`
+        ? `${launched} app shortcut${launched === 1 ? "" : "s"} launched.${group.openLayoutEditorAfterLaunch ? " The window editor will open shortly." : ""}`
         : `${launched} of ${group.launcherIds.length} shortcuts were currently available.`,
       launched > 0 ? "success" : "warning",
     );
@@ -687,6 +693,7 @@ export function ControlCenterControls() {
   const [groupName, setGroupName] = useState("");
   const [selectedLaunchers, setSelectedLaunchers] = useState<Set<string>>(new Set());
   const [selectedLayoutProfileId, setSelectedLayoutProfileId] = useState<string | null>(null);
+  const [openLayoutEditorAfterLaunch, setOpenLayoutEditorAfterLaunch] = useState(false);
   const [automationView, setAutomationView] = useState<AutomationView>("routines");
   const [editingAutomationId, setEditingAutomationId] = useState<string | null>(null);
   const [automationName, setAutomationName] = useState("");
@@ -744,10 +751,26 @@ export function ControlCenterControls() {
   const addGroup = () => {
     const name = groupName.trim();
     if (!name || selectedLaunchers.size === 0) return;
-    setAppGroups([...appGroups, { id: crypto.randomUUID(), name: name.slice(0, 40), launcherIds: [...selectedLaunchers], layoutProfileId: selectedLayoutProfileId }]);
+    setAppGroups([...appGroups, {
+      id: crypto.randomUUID(),
+      name: name.slice(0, 40),
+      launcherIds: [...selectedLaunchers],
+      layoutProfileId: selectedLayoutProfileId,
+      openLayoutEditorAfterLaunch,
+    }]);
     setGroupName("");
     setSelectedLaunchers(new Set());
     setSelectedLayoutProfileId(null);
+    setOpenLayoutEditorAfterLaunch(false);
+  };
+
+  /** Updates how an existing app group handles its windows after launch. */
+  const updateGroupArrangement = (groupId: string, value: string) => {
+    setAppGroups(appGroups.map((group) => group.id === groupId ? {
+      ...group,
+      openLayoutEditorAfterLaunch: value === "__editor__",
+      layoutProfileId: value && value !== "__editor__" ? value : null,
+    } : group));
   };
 
   /** Clears the routine builder without changing saved routines. */
@@ -938,8 +961,18 @@ export function ControlCenterControls() {
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         {appGroups.map((group) => (
                           <div key={group.id} className="rounded-[13px] border border-black/65 bg-black/20 p-3 shadow-well">
-                            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-stone-200">{group.name}</p><p className="mt-1 text-[10px] text-stone-600">{group.launcherIds.length} shortcuts{group.layoutProfileId ? " · arranged after launch" : ""}</p></div><button type="button" onClick={() => setAppGroups(appGroups.filter((candidate) => candidate.id !== group.id))} className="grid size-9 place-items-center rounded-lg text-stone-700 hover:text-red-300" aria-label={`Delete ${group.name}`}><Trash2 size={14} /></button></div>
-                            <TactileButton onClick={() => launchAppGroup(group)} className="mt-3 h-10 w-full text-[10px] font-semibold uppercase tracking-[0.08em]">Launch group</TactileButton>
+                            <div className="flex items-center justify-between gap-3"><div><p className="text-sm font-semibold text-stone-200">{group.name}</p><p className="mt-1 text-[10px] text-stone-600">{group.launcherIds.length} shortcuts{group.openLayoutEditorAfterLaunch ? " · edit layout after launch" : group.layoutProfileId ? " · saved layout after launch" : ""}</p></div><button type="button" onClick={() => setAppGroups(appGroups.filter((candidate) => candidate.id !== group.id))} className="grid size-9 place-items-center rounded-lg text-stone-700 hover:text-red-300" aria-label={`Delete ${group.name}`}><Trash2 size={14} /></button></div>
+                            <select
+                              value={group.openLayoutEditorAfterLaunch ? "__editor__" : group.layoutProfileId ?? ""}
+                              onChange={(event) => updateGroupArrangement(group.id, event.target.value)}
+                              className="schedule-table-input mt-3 border-white/[0.06] bg-black/15"
+                              aria-label={`Window arrangement for ${group.name}`}
+                            >
+                              <option value="">Do not arrange after launch</option>
+                              <option value="__editor__">Open layout editor after launch</option>
+                              {layoutProfileOptions.map((profile) => <option key={profile.id} value={profile.id}>Apply layout: {profile.name}</option>)}
+                            </select>
+                            <TactileButton onClick={() => { closeHub(); launchAppGroup(group); }} className="mt-2 h-10 w-full text-[10px] font-semibold uppercase tracking-[0.08em]">Launch group</TactileButton>
                           </div>
                         ))}
                       </div>
@@ -951,10 +984,20 @@ export function ControlCenterControls() {
                             return <button key={launcher.id} type="button" onClick={() => setSelectedLaunchers((current) => { const next = new Set(current); if (selected) next.delete(launcher.id); else next.add(launcher.id); return next; })} className={`flex min-h-11 items-center justify-between rounded-[10px] border px-3 text-xs ${selected ? "border-signal-700 bg-signal-950/40 text-signal-200" : "border-black/60 bg-black/20 text-stone-500"}`}><span className="truncate">{launcher.label}</span>{selected ? <Check size={14} /> : null}</button>;
                           })}
                         </div>
-                        <select value={selectedLayoutProfileId ?? ""} onChange={(event) => setSelectedLayoutProfileId(event.target.value || null)} className="schedule-input mt-3">
+                        <select
+                          value={openLayoutEditorAfterLaunch ? "__editor__" : selectedLayoutProfileId ?? ""}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setOpenLayoutEditorAfterLaunch(value === "__editor__");
+                            setSelectedLayoutProfileId(value && value !== "__editor__" ? value : null);
+                          }}
+                          className="schedule-input mt-3"
+                        >
                           <option value="">Do not arrange windows after launch</option>
+                          <option value="__editor__">Open window layout editor after launch</option>
                           {layoutProfileOptions.map((profile) => <option key={profile.id} value={profile.id}>Apply layout: {profile.name}</option>)}
                         </select>
+                        {openLayoutEditorAfterLaunch ? <p className="mt-2 text-[10px] leading-relaxed text-stone-600">The visual workspace opens after a short launch delay so the new windows can be dragged, resized, snapped, or saved as a reusable profile.</p> : null}
                         <TactileButton onClick={addGroup} disabled={!groupName.trim() || selectedLaunchers.size === 0} className="mt-3 h-11 w-full"><span className="flex items-center justify-center gap-2 text-xs font-semibold"><Plus size={15} /> Create app group</span></TactileButton>
                       </div>
                     </div>
