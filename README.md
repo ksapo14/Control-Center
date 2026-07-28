@@ -20,7 +20,7 @@ Fork it, adapt the controls to your own computer, replace the integrations, rede
 - An application launcher for selected desktop apps, websites, and VS Code folders.
 - A task manager for viewing and force-closing visible application windows.
 - Spotify playback status, transport controls, and playlist shortcuts.
-- Google Calendar event creation through the Quick Schedule dialog.
+- Gemini-assisted natural-language scheduling with editable single- or multi-event drafts, plus manual Google Calendar event creation.
 - A configurable Pomodoro timer with an audio-reactive focus background. Separate blobs respond to bass, midrange, and treble energy from Windows loopback audio.
 - Global media-key controls and native window minimize/close actions.
 
@@ -32,7 +32,7 @@ Fork it, adapt the controls to your own computer, replace the integrations, rede
 | Native backend | Rust, Windows APIs, PowerShell/CIM |
 | Interface | React 18, TypeScript, Vite |
 | Styling and motion | Tailwind CSS, Framer Motion |
-| Integrations | Spotify Web API, Google Calendar API |
+| Integrations | Spotify Web API, Gemini API, Google Calendar API |
 
 The frontend lives in `src/`. Native commands and integrations live in `src-tauri/src/`. Most system-level features are deliberately implemented for Windows and return an unsupported-platform message elsewhere.
 
@@ -155,7 +155,7 @@ For details, see Spotify's documentation for [PKCE authorization](https://develo
 
 ## Optional Google Calendar setup
 
-Quick Schedule creates events in the connected account's primary Google Calendar. It requests the `calendar.events` OAuth scope.
+Quick Schedule creates reviewed events in the connected account's primary Google Calendar. It requests the `calendar.events` OAuth scope.
 
 1. Create or select a project in [Google Cloud Console](https://console.cloud.google.com/).
 2. Enable the **Google Calendar API**.
@@ -167,11 +167,48 @@ Quick Schedule creates events in the connected account's primary Google Calendar
 
 The imported OAuth client file is validated and copied into the local app configuration directory using Windows DPAPI encryption. The original downloaded JSON remains your responsibility: do not commit it, post it publicly, or send it to other people. Google may display an unverified-app warning while a privately developed OAuth app is in testing. Public distribution can require additional consent-screen configuration or verification. See Google's [Calendar authentication guidance](https://developers.google.com/workspace/calendar/api/auth).
 
+## Optional Gemini Quick Schedule setup
+
+The **Describe with Gemini** tab converts one natural-language sequence into one or more editable event drafts using `gemini-3.5-flash`. It does not create events automatically. Each result is validated by the Rust backend, shown in the review editor, and submitted to Google Calendar only when **Schedule** is selected.
+
+1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey).
+2. Copy the checked-in template to a local environment file:
+
+   ```powershell
+   Copy-Item .env.example .env
+   ```
+
+3. Replace the placeholder in `.env`:
+
+   ```dotenv
+   GEMINI_API_KEY=your_key_here
+   ```
+
+4. Start or restart the desktop app with `npm run tauri dev`.
+
+The backend reads `GEMINI_API_KEY` from the process environment or a local `.env` at runtime. For a standalone executable, either set the process environment variable or place `.env` beside the executable. Do not rename it to `VITE_GEMINI_API_KEY`: variables prefixed with `VITE_` are compiled into client-side JavaScript.
+
+### Gemini scheduling pipeline
+
+1. The React interface sends instructions, the current RFC 3339 timestamp, and the local IANA time zone to a Tauri command. It never receives the API key.
+2. The Rust backend calls Gemini's Interactions API with the key in the `x-goog-api-key` header, a strict calendar-only system instruction, and a closed JSON schema.
+3. The system instruction treats user text only as scheduling data, preserves explicit details, resolves relative dates against the supplied clock and time zone, defaults an omitted duration to 60 minutes, and flags ambiguities for review. It also rejects attempts inside the input to change roles, reveal instructions, or alter the output contract.
+4. The backend parses the structured response and independently checks event count, title length, RFC 3339 timestamps, chronological order, optional-field limits, and Calendar color IDs.
+5. Quick Schedule displays up to 25 editable drafts. A separate batch command validates the full edited set again before making Calendar API calls, and reports per-event failures without hiding successful creations.
+
+Example input:
+
+```text
+Tomorrow: design review at 10 for 45 minutes, lunch with Sam at noon,
+and focus time from 2–4. Make focus time sage.
+```
+
 ## Local data and privacy
 
 The app does not include analytics or a remote telemetry service. It does intentionally access local system information and optional third-party services to provide its features.
 
 - Spotify and Google refresh tokens are encrypted with Windows Data Protection API (DPAPI), tying them to the current Windows user profile.
+- Natural-language schedule instructions are sent to Google's Gemini API only when **Draft events** is selected. Review Google's API terms and data-use settings before sending sensitive calendar details.
 - The imported Google Desktop OAuth client configuration is also DPAPI-encrypted. Existing plaintext app configuration from older versions is encrypted and removed the next time it is loaded.
 - Spotify's Client ID is stored as plaintext because OAuth client IDs are public identifiers; no Spotify client secret is accepted or required.
 - Disconnecting an integration removes its saved token; it may not revoke the application's access at the service. Revoke access from the relevant Google or Spotify account settings when needed.
@@ -183,9 +220,9 @@ Tauri stores integration files in its application configuration directory, norma
 
 ### Secrets and environment variables
 
-The repository does not require or contain API secrets. Local `.env` variants, private keys, downloaded credential JSON files, and integration token files are ignored by Git as a defense against accidental commits.
+The repository does not contain API secrets. Local `.env` variants, private keys, downloaded credential JSON files, and integration token files are ignored by Git as a defense against accidental commits; `.env.example` contains only a placeholder.
 
-Do not put secrets in variables prefixed with `VITE_`: Vite replaces those values during compilation and exposes them in the frontend bundle. Future confidential values should be read only by the Rust backend from the process environment or an encrypted operating-system credential store, and should never be returned through a Tauri command.
+Do not put secrets in variables prefixed with `VITE_`: Vite replaces those values during compilation and exposes them in the frontend bundle. `GEMINI_API_KEY` is read only by the Rust backend, sent in an authentication header, and never returned through a Tauri command. Keep `.env` local and rotate the key immediately if it is ever exposed.
 
 ## Warnings and limitations
 
@@ -198,6 +235,7 @@ Use this project at your own risk and review the source before trusting it with 
 - **The app is Windows-first.** Most native commands explicitly support Windows only. Other operating systems can render the frontend but do not have feature parity.
 - **The build is not code-signed.** Windows may warn before running a downloaded or redistributed build. Never bypass a warning for a binary you did not build yourself or obtain from a source you trust.
 - **OAuth grants write capabilities.** Spotify can control playback and Google Calendar can create events after authorization. Confirm the account and permissions shown on each consent screen.
+- **AI drafts can be wrong.** Relative dates, names, durations, and other details can be misunderstood even with structured output and backend validation. Quick Schedule deliberately requires review before Calendar submission; confirm every draft, especially any item marked **Check details**.
 - **External services can change.** Spotify and Google can alter APIs, account requirements, quotas, scopes, or verification rules independently of this project.
 - **No automatic updates or support guarantee.** Pull, inspect, and rebuild newer revisions manually.
 - **No warranty.** The MIT License provides this software “as is,” without guarantees of correctness, fitness, security, or continued compatibility.
@@ -211,6 +249,7 @@ Use this project at your own risk and review the source before trusting it with 
 │   └── lib/                     Frontend runtime helpers
 ├── src-tauri/
 │   ├── src/lib.rs               Native Windows commands and Tauri setup
+│   ├── src/gemini_schedule.rs   Gemini schema, system prompt, and draft validation
 │   ├── src/spotify.rs           Spotify OAuth and Web API integration
 │   ├── src/google_calendar.rs   Google OAuth and Calendar integration
 │   ├── capabilities/            Tauri permission configuration

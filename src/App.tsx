@@ -4,6 +4,7 @@ import { BatteryStatus } from "./components/BatteryStatus";
 import { BluetoothWidget } from "./components/BluetoothWidget";
 import { ClockWidget } from "./components/ClockWidget";
 import { PomodoroTimer } from "./components/PomodoroTimer";
+import { Planning } from "./components/Planning";
 import { KeyboardShortcutControls } from "./components/KeyboardShortcuts";
 import { QuickSchedule } from "./components/QuickSchedule";
 import { SpotifyWidget } from "./components/SpotifyWidget";
@@ -61,6 +62,7 @@ export default function App() {
             <ControlCenterControls />
             <KeyboardShortcutControls />
             <TaskManager />
+            <Planning />
             <QuickSchedule />
             <BatteryStatus />
             <TitleBarActions />

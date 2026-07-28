@@ -129,6 +129,11 @@ export function PomodoroTimer() {
         setCompleted(true);
         setFocusOpen(true);
         setRunning(false);
+        window.dispatchEvent(
+          new CustomEvent("control-panel:automation-trigger", {
+            detail: { trigger: "pomodoro-complete" },
+          }),
+        );
       }
     };
 
@@ -242,7 +247,7 @@ export function PomodoroTimer() {
     setRunning(true);
     window.dispatchEvent(
       new CustomEvent("control-panel:automation-trigger", {
-        detail: { trigger: "pomodoro" },
+        detail: { trigger: "pomodoro-start" },
       }),
     );
   };

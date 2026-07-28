@@ -12,6 +12,7 @@
   --signal-500: 189 131 49;
   --ambient-tint: 218 166 75;
   --panel-tint: 20 24 21;
+  --document-text: 226 218 203;
   font-size: 17px;
   font-family: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
   color: #e7e5e4;
@@ -31,6 +32,7 @@
   --signal-500: 82 87 84;
   --ambient-tint: 120 126 122;
   --panel-tint: 13 14 14;
+  --document-text: 218 220 219;
 }
 
 :root[data-theme="green"] {
@@ -43,6 +45,7 @@
   --signal-500: 43 139 85;
   --ambient-tint: 73 185 120;
   --panel-tint: 12 27 19;
+  --document-text: 202 232 211;
 }
 
 :root[data-theme="blue"] {
@@ -55,6 +58,7 @@
   --signal-500: 52 112 190;
   --ambient-tint: 91 158 232;
   --panel-tint: 12 22 36;
+  --document-text: 206 224 242;
 }
 
 :root[data-theme="white"] {
@@ -67,6 +71,7 @@
   --signal-500: 169 172 166;
   --ambient-tint: 232 233 228;
   --panel-tint: 25 26 25;
+  --document-text: 242 242 237;
 }
 
 * {
@@ -93,12 +98,173 @@ body {
 }
 
 button,
-input {
+input,
+textarea {
   font: inherit;
 }
 
 input {
   color-scheme: dark;
+}
+
+.plan-title-input {
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgb(var(--document-text));
+  font-family: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.plan-title-input::selection,
+.plan-editor::selection {
+  background: rgb(var(--signal-500) / 0.42);
+}
+
+.plan-title-input:focus-visible {
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--signal-500) / 0.5);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+}
+
+.plan-editor {
+  display: block;
+  width: 100%;
+  min-height: 100%;
+  resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: rgb(var(--document-text));
+  padding: 34px clamp(20px, 6vw, 72px) 64px;
+  font-family: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.75;
+  caret-color: rgb(var(--signal-300));
+}
+
+.plan-editor::placeholder {
+  color: rgb(87 83 78);
+  opacity: 1;
+}
+
+.plan-markdown {
+  color: rgb(var(--document-text));
+  font-family: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
+  font-size: 15px;
+  line-height: 1.75;
+}
+
+.plan-markdown h1,
+.plan-markdown h2,
+.plan-markdown h3,
+.plan-markdown h4,
+.plan-markdown h5,
+.plan-markdown h6 {
+  margin: 1.6em 0 0.55em;
+  color: rgb(var(--document-text));
+  font: inherit;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+  line-height: 1.22;
+}
+
+.plan-markdown h1:first-child,
+.plan-markdown h2:first-child,
+.plan-markdown h3:first-child {
+  margin-top: 0;
+}
+
+.plan-markdown h1 { font-size: 2em; }
+.plan-markdown h2 { font-size: 1.55em; }
+.plan-markdown h3 { font-size: 1.25em; }
+.plan-markdown h4,
+.plan-markdown h5,
+.plan-markdown h6 { font-size: 1em; }
+
+.plan-markdown p {
+  margin: 0.8em 0;
+}
+
+.plan-markdown ul,
+.plan-markdown ol {
+  margin: 0.85em 0;
+  padding-left: 1.35em;
+}
+
+.plan-markdown ul { list-style: disc; }
+.plan-markdown ol { list-style: decimal; }
+.plan-markdown li { margin: 0.3em 0; padding-left: 0.2em; }
+
+.plan-markdown .plan-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-left: -1.25em;
+  list-style: none;
+}
+
+.plan-checkbox {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-top: 5px;
+  border: 1px solid rgb(var(--signal-500) / 0.65);
+  border-radius: 4px;
+  color: rgb(var(--signal-300));
+}
+
+.plan-markdown blockquote {
+  margin: 1.2em 0;
+  border-left: 2px solid rgb(var(--signal-500) / 0.55);
+  padding: 0.25em 0 0.25em 1em;
+  color: rgb(var(--document-text) / 0.72);
+}
+
+.plan-markdown code {
+  border: 1px solid rgb(255 255 255 / 0.055);
+  border-radius: 5px;
+  background: rgb(0 0 0 / 0.28);
+  padding: 0.12em 0.35em;
+  color: rgb(var(--signal-300));
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 0.86em;
+}
+
+.plan-markdown pre {
+  margin: 1.2em 0;
+  overflow-x: auto;
+  border: 1px solid rgb(0 0 0 / 0.75);
+  border-radius: 10px;
+  background: rgb(0 0 0 / 0.32);
+  padding: 15px 16px;
+  box-shadow: inset 3px 3px 8px rgb(0 0 0 / 0.45);
+}
+
+.plan-markdown pre code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: rgb(var(--document-text) / 0.9);
+}
+
+.plan-markdown a {
+  color: rgb(var(--signal-300));
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--signal-500) / 0.65);
+  text-underline-offset: 3px;
+}
+
+.plan-markdown hr {
+  margin: 1.7em 0;
+  border: 0;
+  border-top: 1px solid rgb(255 255 255 / 0.075);
 }
 
 button {

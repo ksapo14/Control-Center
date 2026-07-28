@@ -1,4 +1,5 @@
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+use chrono::DateTime;
 use rand::{rngs::OsRng, RngCore};
 use reqwest::{blocking::Client, StatusCode};
 use serde::{Deserialize, Serialize};
@@ -63,7 +64,16 @@ pub(crate) struct CreateCalendarEventRequest {
     title: String,
     start: String,
     end: String,
+    description: Option<String>,
+    location: Option<String>,
     color_id: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// A bounded collection of reviewed event drafts submitted together.
+pub(crate) struct BatchCreateCalendarEventsRequest {
+    events: Vec<CreateCalendarEventRequest>,
 }
 
 #[derive(Serialize)]
@@ -73,6 +83,21 @@ pub(crate) struct CreatedCalendarEvent {
     id: String,
     html_link: String,
     summary: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct FailedCalendarEvent {
+    index: usize,
+    title: String,
+    error: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct BatchCreateCalendarEventsResult {
+    created: Vec<CreatedCalendarEvent>,
+    failed: Vec<FailedCalendarEvent>,
 }
 
 fn now_epoch() -> Result<u64, String> {
@@ -645,22 +670,8 @@ fn send_event(
         .map_err(|error| format!("The event could not reach Google Calendar: {error}"))
 }
 
-/// Validates and creates a primary-calendar event, retrying once after authorization expiry.
-///
-/// # Arguments
-/// * `app` - Handle used for authentication storage.
-/// * `request` - Frontend-supplied event fields.
-///
-/// # Returns
-/// Created event metadata for user confirmation.
-///
-/// # Errors
-/// Returns an error for invalid input, authentication failures, or rejected API responses.
-fn create_event_blocking(
-    app: tauri::AppHandle,
-    request: CreateCalendarEventRequest,
-) -> Result<CreatedCalendarEvent, String> {
-    // --- Input Validation ---
+/// Validates one reviewed event and builds the corresponding Google resource.
+fn event_body(request: &CreateCalendarEventRequest) -> Result<(String, Value), String> {
     let title = request.title.trim();
     if title.is_empty() {
         return Err("Add a title before saving the event".into());
@@ -668,8 +679,11 @@ fn create_event_blocking(
     if title.chars().count() > 512 {
         return Err("The event title is too long".into());
     }
-    if !request.start.ends_with('Z') || !request.end.ends_with('Z') || request.end <= request.start
-    {
+    let start = DateTime::parse_from_rfc3339(request.start.trim())
+        .map_err(|_| "Choose a valid event start time".to_string())?;
+    let end = DateTime::parse_from_rfc3339(request.end.trim())
+        .map_err(|_| "Choose a valid event end time".to_string())?;
+    if end <= start {
         return Err("Choose a valid end time after the start time".into());
     }
     if let Some(color) = &request.color_id {
@@ -681,27 +695,57 @@ fn create_event_blocking(
         }
     }
 
-    // --- Google Event Resource ---
     let mut body = json!({
         "summary": title,
-        "start": { "dateTime": request.start },
-        "end": { "dateTime": request.end }
+        "start": { "dateTime": request.start.trim() },
+        "end": { "dateTime": request.end.trim() }
     });
-    if let Some(color) = request.color_id {
-        body["colorId"] = Value::String(color);
+    if let Some(description) = request
+        .description
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if description.chars().count() > 8_192 {
+            return Err("The event description is too long".into());
+        }
+        body["description"] = Value::String(description.to_string());
     }
+    if let Some(location) = request
+        .location
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if location.chars().count() > 1_024 {
+            return Err("The event location is too long".into());
+        }
+        body["location"] = Value::String(location.to_string());
+    }
+    if let Some(color) = request
+        .color_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        body["colorId"] = Value::String(color.to_string());
+    }
+    Ok((title.to_string(), body))
+}
 
-    // --- Authenticated API Request ---
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()
-        .map_err(|error| format!("The Google connection client could not start: {error}"))?;
-    let token = access_token(&app, false)?;
-    let mut response = send_event(&client, &token, &body)?;
+/// Submits one validated Google resource, refreshing authorization once when necessary.
+fn submit_event(
+    app: &tauri::AppHandle,
+    client: &Client,
+    token: &mut String,
+    title: &str,
+    body: &Value,
+) -> Result<CreatedCalendarEvent, String> {
+    let mut response = send_event(client, token, body)?;
     // A 401 can race the local expiry check, so force one refresh before surfacing failure.
     if response.status() == StatusCode::UNAUTHORIZED {
-        let token = access_token(&app, true)?;
-        response = send_event(&client, &token, &body)?;
+        *token = access_token(app, true)?;
+        response = send_event(client, token, body)?;
     }
     if !response.status().is_success() {
         return Err(response_error(
@@ -713,7 +757,6 @@ fn create_event_blocking(
         .json()
         .map_err(|error| format!("Google returned an unreadable event: {error}"))?;
 
-    // --- Frontend Response Model ---
     Ok(CreatedCalendarEvent {
         id: event
             .get("id")
@@ -731,6 +774,55 @@ fn create_event_blocking(
             .unwrap_or(title)
             .to_string(),
     })
+}
+
+/// Validates and creates a primary-calendar event, retrying once after authorization expiry.
+fn create_event_blocking(
+    app: tauri::AppHandle,
+    request: CreateCalendarEventRequest,
+) -> Result<CreatedCalendarEvent, String> {
+    let (title, body) = event_body(&request)?;
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("The Google connection client could not start: {error}"))?;
+    let mut token = access_token(&app, false)?;
+    submit_event(&app, &client, &mut token, &title, &body)
+}
+
+/// Validates the complete batch before creating any event, then records partial API failures.
+fn create_events_blocking(
+    app: tauri::AppHandle,
+    request: BatchCreateCalendarEventsRequest,
+) -> Result<BatchCreateCalendarEventsResult, String> {
+    if request.events.is_empty() || request.events.len() > 25 {
+        return Err("Schedule between 1 and 25 events at a time".into());
+    }
+    let validated = request
+        .events
+        .iter()
+        .map(event_body)
+        .collect::<Result<Vec<_>, _>>()?;
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .map_err(|error| format!("The Google connection client could not start: {error}"))?;
+    let mut token = access_token(&app, false)?;
+    let mut created = Vec::with_capacity(validated.len());
+    let mut failed = Vec::new();
+
+    for (index, (title, body)) in validated.into_iter().enumerate() {
+        match submit_event(&app, &client, &mut token, &title, &body) {
+            Ok(event) => created.push(event),
+            Err(error) => failed.push(FailedCalendarEvent {
+                index,
+                title,
+                error,
+            }),
+        }
+    }
+
+    Ok(BatchCreateCalendarEventsResult { created, failed })
 }
 
 #[tauri::command]
@@ -849,4 +941,15 @@ pub(crate) async fn create_google_calendar_event(
     tauri::async_runtime::spawn_blocking(move || create_event_blocking(app, request))
         .await
         .map_err(|error| format!("The Calendar request stopped unexpectedly: {error}"))?
+}
+
+#[tauri::command]
+/// Creates a reviewed collection of Calendar events on one blocking worker.
+pub(crate) async fn create_google_calendar_events(
+    app: tauri::AppHandle,
+    request: BatchCreateCalendarEventsRequest,
+) -> Result<BatchCreateCalendarEventsResult, String> {
+    tauri::async_runtime::spawn_blocking(move || create_events_blocking(app, request))
+        .await
+        .map_err(|error| format!("The Calendar batch stopped unexpectedly: {error}"))?
 }

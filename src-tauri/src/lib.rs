@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, process::Command};
 use tauri::Manager;
 
+mod gemini_schedule;
 mod google_calendar;
 mod spotify;
 
@@ -2404,6 +2405,9 @@ pub fn run() {
             google_calendar::connect_google_calendar,
             google_calendar::disconnect_google_calendar,
             google_calendar::create_google_calendar_event,
+            google_calendar::create_google_calendar_events,
+            gemini_schedule::get_gemini_schedule_status,
+            gemini_schedule::parse_schedule_with_gemini,
             spotify::get_spotify_status,
             spotify::configure_spotify,
             spotify::connect_spotify,
