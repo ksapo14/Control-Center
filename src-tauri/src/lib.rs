@@ -1709,17 +1709,155 @@ struct RawOpenApplication {
     pid: u32,
     name: String,
     title: String,
+    handle: i64,
 }
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-/// Frontend-safe process metadata with force-close protection details.
+/// Frontend-safe window metadata with geometry and safety details.
 struct OpenApplication {
     pid: u32,
     name: String,
     title: String,
+    handle: u64,
+    monitor_id: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    minimized: bool,
     protected: bool,
     protected_reason: Option<String>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Describes a logical display and its usable desktop area.
+struct DisplayMonitor {
+    id: String,
+    name: String,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    work_x: i32,
+    work_y: i32,
+    work_width: u32,
+    work_height: u32,
+    primary: bool,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+/// Bundles the display topology with every manageable top-level window.
+struct WindowWorkspace {
+    monitors: Vec<DisplayMonitor>,
+    windows: Vec<OpenApplication>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+/// Represents one staged window mutation submitted by the workspace editor.
+struct WindowWorkspaceUpdate {
+    handle: u64,
+    pid: u32,
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+    close: bool,
+}
+
+#[derive(Deserialize)]
+/// Carries a validated batch of staged window mutations.
+struct ApplyWindowWorkspaceRequest {
+    windows: Vec<WindowWorkspaceUpdate>,
+}
+
+#[cfg(target_os = "windows")]
+/// Reads monitor bounds and work areas from the current Windows desktop topology.
+///
+/// # Returns
+/// Logical displays ordered with the primary display first, then spatially.
+///
+/// # Errors
+/// Returns an error when Windows does not expose any monitor geometry.
+fn display_monitors() -> Result<Vec<DisplayMonitor>, String> {
+    use std::mem::size_of;
+    use windows::Win32::Graphics::Gdi::{GetMonitorInfoW, MONITORINFOEXW};
+
+    let mut monitors = logical_monitors()
+        .into_iter()
+        .filter_map(|handle| unsafe {
+            let mut info = MONITORINFOEXW::default();
+            info.monitorInfo.cbSize = size_of::<MONITORINFOEXW>() as u32;
+            if !GetMonitorInfoW(handle, &mut info.monitorInfo).as_bool() {
+                return None;
+            }
+
+            let device_end = info
+                .szDevice
+                .iter()
+                .position(|character| *character == 0)
+                .unwrap_or(info.szDevice.len());
+            let id = String::from_utf16_lossy(&info.szDevice[..device_end]);
+            let bounds = info.monitorInfo.rcMonitor;
+            let work = info.monitorInfo.rcWork;
+            Some(DisplayMonitor {
+                name: id.trim_start_matches("\\\\.\\").to_string(),
+                id,
+                x: bounds.left,
+                y: bounds.top,
+                width: bounds.right.saturating_sub(bounds.left) as u32,
+                height: bounds.bottom.saturating_sub(bounds.top) as u32,
+                work_x: work.left,
+                work_y: work.top,
+                work_width: work.right.saturating_sub(work.left) as u32,
+                work_height: work.bottom.saturating_sub(work.top) as u32,
+                primary: info.monitorInfo.dwFlags & 1 == 1,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    monitors.sort_by_key(|monitor| (!monitor.primary, monitor.y, monitor.x));
+    if monitors.is_empty() {
+        Err("Windows did not report any connected displays".into())
+    } else {
+        Ok(monitors)
+    }
+}
+
+/// Selects the display containing the largest portion of a window rectangle.
+///
+/// # Arguments
+/// * `monitors` - Current logical display topology.
+/// * `x`, `y`, `width`, `height` - Window bounds in virtual-screen coordinates.
+///
+/// # Returns
+/// The best matching monitor, falling back to the primary display.
+fn monitor_for_rect(
+    monitors: &[DisplayMonitor],
+    x: i32,
+    y: i32,
+    width: u32,
+    height: u32,
+) -> Option<&DisplayMonitor> {
+    let right = x.saturating_add(width as i32);
+    let bottom = y.saturating_add(height as i32);
+    monitors
+        .iter()
+        .max_by_key(|monitor| {
+            let intersection_width = right
+                .min(monitor.x.saturating_add(monitor.width as i32))
+                .saturating_sub(x.max(monitor.x))
+                .max(0) as i64;
+            let intersection_height = bottom
+                .min(monitor.y.saturating_add(monitor.height as i32))
+                .saturating_sub(y.max(monitor.y))
+                .max(0) as i64;
+            intersection_width * intersection_height
+        })
+        .or_else(|| monitors.iter().find(|monitor| monitor.primary))
 }
 
 /// Determines whether the control panel should refuse to terminate a visible process.
@@ -1763,26 +1901,64 @@ fn application_protection(pid: u32, name: &str) -> Option<String> {
 fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
     #[cfg(target_os = "windows")]
     {
+        use std::{ffi::c_void, mem::size_of};
+        use windows::Win32::{
+            Foundation::{HWND, RECT},
+            UI::WindowsAndMessaging::{
+                GetWindowPlacement, GetWindowRect, IsIconic, WINDOWPLACEMENT,
+            },
+        };
+
         // --- Visible Window Snapshot ---
-        let script = r#"[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $apps=@(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } | ForEach-Object { [pscustomobject]@{ pid=[uint32]$_.Id; name=$_.ProcessName; title=$_.MainWindowTitle } }); ConvertTo-Json -InputObject $apps -Compress"#;
+        let script = r#"[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new($false); $apps=@(Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and -not [string]::IsNullOrWhiteSpace($_.MainWindowTitle) } | ForEach-Object { [pscustomobject]@{ pid=[uint32]$_.Id; name=$_.ProcessName; title=$_.MainWindowTitle; handle=[int64]$_.MainWindowHandle } }); ConvertTo-Json -InputObject $apps -Compress"#;
         let output = powershell_output(script)?;
         if output.is_empty() {
             return Ok(Vec::new());
         }
+        let monitors = display_monitors()?;
 
         // --- Protection and Stable Ordering ---
         let mut applications = serde_json::from_str::<Vec<RawOpenApplication>>(&output)
             .map_err(|error| command_error("Open applications could not be parsed", error))?
             .into_iter()
-            .map(|application| {
+            .filter_map(|application| {
+                let handle = HWND(application.handle as isize as *mut c_void);
+                let minimized = unsafe { IsIconic(handle).as_bool() };
+                let mut bounds = RECT::default();
+
+                // Minimized windows use an off-screen sentinel; their normal bounds remain editable.
+                let geometry_result = if minimized {
+                    let mut placement = WINDOWPLACEMENT {
+                        length: size_of::<WINDOWPLACEMENT>() as u32,
+                        ..Default::default()
+                    };
+                    unsafe { GetWindowPlacement(handle, &mut placement) }
+                        .map(|_| bounds = placement.rcNormalPosition)
+                } else {
+                    unsafe { GetWindowRect(handle, &mut bounds) }
+                };
+                if geometry_result.is_err() {
+                    return None;
+                }
+
+                let width = bounds.right.saturating_sub(bounds.left).max(1) as u32;
+                let height = bounds.bottom.saturating_sub(bounds.top).max(1) as u32;
+                let monitor = monitor_for_rect(&monitors, bounds.left, bounds.top, width, height)?;
                 let protected_reason = application_protection(application.pid, &application.name);
-                OpenApplication {
+                Some(OpenApplication {
                     pid: application.pid,
                     name: application.name,
                     title: application.title,
+                    handle: application.handle as u64,
+                    monitor_id: monitor.id.clone(),
+                    x: bounds.left,
+                    y: bounds.top,
+                    width,
+                    height,
+                    minimized,
                     protected: protected_reason.is_some(),
                     protected_reason,
-                }
+                })
             })
             .collect::<Vec<_>>();
 
@@ -1797,6 +1973,156 @@ fn list_open_applications() -> Result<Vec<OpenApplication>, String> {
 
     #[cfg(not(target_os = "windows"))]
     Err("Open application management is currently configured for Windows".into())
+}
+
+#[tauri::command]
+/// Captures the complete display topology and visible application window layout.
+///
+/// # Returns
+/// Connected monitors and their currently assigned top-level application windows.
+///
+/// # Errors
+/// Returns an error when monitor or window enumeration fails.
+fn get_window_workspace() -> Result<WindowWorkspace, String> {
+    #[cfg(target_os = "windows")]
+    {
+        return Ok(WindowWorkspace {
+            monitors: display_monitors()?,
+            windows: list_open_applications()?,
+        });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    Err("Window arrangement is currently configured for Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+/// Resolves and verifies a submitted native window handle against its process identifier.
+///
+/// # Arguments
+/// * `handle` - Serialized Win32 window handle.
+/// * `expected_pid` - Process identifier captured with the handle.
+///
+/// # Returns
+/// The live Win32 handle when it still belongs to the expected process.
+///
+/// # Errors
+/// Returns an error for stale, reused, or invalid handles.
+fn verified_window_handle(
+    handle: u64,
+    expected_pid: u32,
+) -> Result<windows::Win32::Foundation::HWND, String> {
+    use std::ffi::c_void;
+    use windows::Win32::{
+        Foundation::HWND,
+        UI::WindowsAndMessaging::{GetWindowThreadProcessId, IsWindow},
+    };
+
+    let window = HWND(handle as usize as *mut c_void);
+    if !unsafe { IsWindow(Some(window)).as_bool() } {
+        return Err("One of the selected windows is no longer open".into());
+    }
+    let mut live_pid = 0_u32;
+    unsafe { GetWindowThreadProcessId(window, Some(&mut live_pid)) };
+    if live_pid != expected_pid {
+        return Err("A window changed ownership before the layout could be saved".into());
+    }
+    Ok(window)
+}
+
+#[tauri::command]
+/// Validates and applies all staged window moves, resizes, and close requests.
+///
+/// # Arguments
+/// * `request` - Final window states submitted by the workspace editor.
+///
+/// # Returns
+/// Success after Windows accepts every requested operation.
+///
+/// # Errors
+/// Returns an error before mutation for unsafe, stale, or off-screen requests, or when Windows rejects an operation.
+fn apply_window_workspace(request: ApplyWindowWorkspaceRequest) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        use windows::Win32::{
+            Foundation::{LPARAM, WPARAM},
+            UI::WindowsAndMessaging::{
+                PostMessageW, SetWindowPos, ShowWindow, SWP_NOACTIVATE, SWP_NOZORDER, SW_RESTORE,
+                WM_CLOSE,
+            },
+        };
+
+        let monitors = display_monitors()?;
+        let current_windows = list_open_applications()?;
+        let mut validated = Vec::with_capacity(request.windows.len());
+
+        // Validate the whole batch first so predictable errors cannot leave a partial layout.
+        for update in request.windows {
+            let current = current_windows
+                .iter()
+                .find(|window| window.handle == update.handle && window.pid == update.pid)
+                .ok_or_else(|| "One of the selected windows is no longer open".to_string())?;
+            if let Some(reason) = current.protected_reason.clone() {
+                return Err(reason);
+            }
+            if !update.close {
+                if update.width < 160 || update.height < 100 {
+                    return Err(format!(
+                        "{} is smaller than Windows can safely arrange",
+                        current.name
+                    ));
+                }
+                if monitor_for_rect(&monitors, update.x, update.y, update.width, update.height).map(
+                    |monitor| {
+                        let right = update.x.saturating_add(update.width as i32);
+                        let bottom = update.y.saturating_add(update.height as i32);
+                        right > monitor.x
+                            && bottom > monitor.y
+                            && update.x < monitor.x.saturating_add(monitor.width as i32)
+                            && update.y < monitor.y.saturating_add(monitor.height as i32)
+                    },
+                ) != Some(true)
+                {
+                    return Err(format!(
+                        "{} would be placed outside every connected display",
+                        current.name
+                    ));
+                }
+            }
+            validated.push((verified_window_handle(update.handle, update.pid)?, update));
+        }
+
+        // Graceful WM_CLOSE preserves each app's own unsaved-work prompt and shutdown behavior.
+        for (handle, update) in validated {
+            if update.close {
+                unsafe { PostMessageW(Some(handle), WM_CLOSE, WPARAM(0), LPARAM(0)) }.map_err(
+                    |error| command_error("Windows could not close an application", error),
+                )?;
+                continue;
+            }
+
+            let _ = unsafe { ShowWindow(handle, SW_RESTORE) };
+            unsafe {
+                SetWindowPos(
+                    handle,
+                    None,
+                    update.x,
+                    update.y,
+                    update.width as i32,
+                    update.height as i32,
+                    SWP_NOACTIVATE | SWP_NOZORDER,
+                )
+            }
+            .map_err(|error| command_error("Windows could not apply the window layout", error))?;
+        }
+        return Ok(());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = request;
+        Err("Window arrangement is currently configured for Windows".into())
+    }
 }
 
 #[tauri::command]
@@ -1921,6 +2247,8 @@ pub fn run() {
             media_control,
             list_open_applications,
             force_close_application,
+            get_window_workspace,
+            apply_window_workspace,
             minimize_main_window,
             close_main_window,
             google_calendar::get_google_calendar_status,
