@@ -141,6 +141,7 @@ export function VolumeWidget() {
   // --- Widget Rendering ---
   return (
     <WidgetFrame
+      widgetId="volume"
       title="Audio and display"
       icon={<Volume2 size={16} strokeWidth={1.7} />}
       className="lg:col-span-5"

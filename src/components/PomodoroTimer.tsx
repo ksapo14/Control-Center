@@ -1,11 +1,15 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "framer-motion";
-import { Pause, Play, RotateCcw, X } from "lucide-react";
+import { Clock3, Pause, Play, RotateCcw, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
+import { useDashboardCustomization } from "./DashboardCustomization";
+import { HiddenWidgetTile, WidgetVisibilityButton } from "./WidgetFrame";
 
 const DEFAULT_SECONDS = 25 * 60;
+const AUDIO_NOISE_FLOOR = 0.02;
+const AUDIO_VISUAL_CEILING = 0.55;
 
 type AudioBands = {
   bass: number;
@@ -44,12 +48,27 @@ function parseTimePart(value: string, maximum: number) {
 }
 
 /**
+ * Maps a native RMS band onto motion without boosting low-level spectral leakage.
+ * @param value - The normalized native energy for one frequency band.
+ * @returns A contrast-preserving motion level between zero and one.
+ */
+function audioMotionLevel(value: number) {
+  const normalized = clamp(
+    (value - AUDIO_NOISE_FLOOR) / (AUDIO_VISUAL_CEILING - AUDIO_NOISE_FLOOR),
+    0,
+    1,
+  );
+  return Math.pow(normalized, 1.35);
+}
+
+/**
  * Runs an editable Pomodoro timer with an immersive, audio-reactive focus view.
  * @returns The dashboard timer and its focus-mode overlays.
  * @remarks Side effects: manages focus, body scrolling, timers, and native audio-meter polling.
  */
 export function PomodoroTimer() {
   // --- Timer and Focus State ---
+  const { hiddenWidgets } = useDashboardCustomization();
   const [remainingSeconds, setRemainingSeconds] = useState(DEFAULT_SECONDS);
   const [running, setRunning] = useState(false);
   const [completed, setCompleted] = useState(false);
@@ -67,12 +86,12 @@ export function PomodoroTimer() {
   const bass = useSpring(rawBass, { stiffness: 82, damping: 17, mass: 0.9 });
   const mids = useSpring(rawMids, { stiffness: 108, damping: 19, mass: 0.72 });
   const treble = useSpring(rawTreble, { stiffness: 148, damping: 21, mass: 0.56 });
-  const bassScale = useTransform(bass, [0, 1], [0.9, 1.5]);
-  const midsScale = useTransform(mids, [0, 1], [0.92, 1.42]);
-  const trebleScale = useTransform(treble, [0, 1], [0.94, 1.34]);
-  const bassOpacity = useTransform(bass, [0, 1], [0.62, 1]);
-  const midsOpacity = useTransform(mids, [0, 1], [0.6, 1]);
-  const trebleOpacity = useTransform(treble, [0, 1], [0.58, 1]);
+  const bassScale = useTransform(bass, [0, 1], [0.7, 1.58]);
+  const midsScale = useTransform(mids, [0, 1], [0.72, 1.48]);
+  const trebleScale = useTransform(treble, [0, 1], [0.74, 1.38]);
+  const bassOpacity = useTransform(bass, [0, 1], [0.08, 1]);
+  const midsOpacity = useTransform(mids, [0, 1], [0.07, 1]);
+  const trebleOpacity = useTransform(treble, [0, 1], [0.06, 1]);
 
   const minutes = Math.floor(remainingSeconds / 60);
   const seconds = remainingSeconds % 60;
@@ -174,10 +193,10 @@ export function PomodoroTimer() {
       try {
         const bands = await invoke<AudioBands>("get_system_audio_bands");
         if (active) {
-          // Sub-linear curves lift quieter frequencies enough to keep the visual field responsive.
-          rawBass.set(Math.pow(clamp(bands.bass, 0, 1), 0.52));
-          rawMids.set(Math.pow(clamp(bands.mids, 0, 1), 0.5));
-          rawTreble.set(Math.pow(clamp(bands.treble, 0, 1), 0.46));
+          // Preserve band contrast instead of making low-level crossover leakage look active.
+          rawBass.set(audioMotionLevel(bands.bass));
+          rawMids.set(audioMotionLevel(bands.mids));
+          rawTreble.set(audioMotionLevel(bands.treble));
         }
       } catch {
         if (active) {
@@ -289,8 +308,20 @@ export function PomodoroTimer() {
    * @param focused - Whether to render the focus overlay presentation.
    * @returns The configured timer panel.
    */
-  const timerPanel = (focused: boolean) => (
-    <motion.section
+  const timerPanel = (focused: boolean) => {
+    if (!focused && hiddenWidgets.has("pomodoro")) {
+      return (
+        <HiddenWidgetTile
+          widgetId="pomodoro"
+          title="Pomodoro"
+          icon={<Clock3 size={14} strokeWidth={1.7} />}
+          className="h-full min-h-[220px] md:col-span-2 lg:col-span-3"
+        />
+      );
+    }
+
+    return (
+      <motion.section
       role={focused ? (completed ? "alertdialog" : "dialog") : undefined}
       aria-modal={focused ? true : undefined}
       aria-label={focused ? (completed ? "Pomodoro complete" : "Active Pomodoro timer") : "Pomodoro timer"}
@@ -305,9 +336,10 @@ export function PomodoroTimer() {
             }`
           : `h-full min-h-[220px] md:col-span-2 lg:col-span-3 ${focusOpen ? "pointer-events-none" : ""}`
       }`}
-    >
-      <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-      <h2 className="sr-only">Pomodoro</h2>
+      >
+        <div className="pointer-events-none absolute inset-x-4 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+        <h2 className="sr-only">Pomodoro</h2>
+        {!focused && <WidgetVisibilityButton widgetId="pomodoro" title="Pomodoro" />}
 
       {focused && running && (
         <button
@@ -389,8 +421,9 @@ export function PomodoroTimer() {
           )}
         </TactileButton>
       </div>
-    </motion.section>
-  );
+      </motion.section>
+    );
+  };
 
   // --- Focus Overlay Rendering ---
   return (

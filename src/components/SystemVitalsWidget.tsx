@@ -94,6 +94,7 @@ export function SystemVitalsWidget() {
   // --- Widget Rendering ---
   return (
     <WidgetFrame
+      widgetId="system-vitals"
       title="System vitals"
       icon={<Activity size={16} strokeWidth={1.7} />}
       className="md:col-span-2 lg:col-span-9"

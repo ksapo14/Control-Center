@@ -3,13 +3,70 @@
 @tailwind utilities;
 
 :root {
+  --graphite-950: 6 7 6;
+  --graphite-900: 10 12 11;
+  --graphite-800: 16 18 16;
+  --graphite-700: 23 26 24;
+  --signal-300: 242 199 114;
+  --signal-400: 218 166 75;
+  --signal-500: 189 131 49;
+  --ambient-tint: 218 166 75;
+  --panel-tint: 20 24 21;
   font-size: 17px;
   font-family: "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif;
   color: #e7e5e4;
-  background: #060706;
+  background: rgb(var(--graphite-950));
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+}
+
+:root[data-theme="black"] {
+  --graphite-950: 3 4 4;
+  --graphite-900: 7 8 8;
+  --graphite-800: 12 13 13;
+  --graphite-700: 20 21 21;
+  --signal-300: 174 179 176;
+  --signal-400: 126 132 128;
+  --signal-500: 82 87 84;
+  --ambient-tint: 120 126 122;
+  --panel-tint: 13 14 14;
+}
+
+:root[data-theme="green"] {
+  --graphite-950: 4 8 6;
+  --graphite-900: 7 14 10;
+  --graphite-800: 12 23 17;
+  --graphite-700: 18 33 24;
+  --signal-300: 126 225 159;
+  --signal-400: 73 185 120;
+  --signal-500: 43 139 85;
+  --ambient-tint: 73 185 120;
+  --panel-tint: 12 27 19;
+}
+
+:root[data-theme="blue"] {
+  --graphite-950: 4 7 11;
+  --graphite-900: 7 12 19;
+  --graphite-800: 12 20 31;
+  --graphite-700: 19 30 45;
+  --signal-300: 143 193 242;
+  --signal-400: 91 158 232;
+  --signal-500: 52 112 190;
+  --ambient-tint: 91 158 232;
+  --panel-tint: 12 22 36;
+}
+
+:root[data-theme="white"] {
+  --graphite-950: 10 11 10;
+  --graphite-900: 15 16 15;
+  --graphite-800: 22 23 22;
+  --graphite-700: 31 32 31;
+  --signal-300: 247 247 243;
+  --signal-400: 220 221 216;
+  --signal-500: 169 172 166;
+  --ambient-tint: 232 233 228;
+  --panel-tint: 25 26 25;
 }
 
 * {
@@ -50,9 +107,9 @@ button {
 
 .ambient-light {
   background:
-    radial-gradient(circle at 4% 0%, rgba(255, 255, 255, 0.028), transparent 24%),
+    radial-gradient(circle at 4% 0%, rgb(var(--ambient-tint) / 0.065), transparent 25%),
     radial-gradient(circle at 96% 100%, rgba(0, 0, 0, 0.48), transparent 38%),
-    linear-gradient(145deg, #0a0c0b 0%, #060706 48%, #050605 100%);
+    linear-gradient(145deg, rgb(var(--graphite-900)) 0%, rgb(var(--graphite-950)) 48%, #030403 100%);
 }
 
 .noise-layer {
@@ -64,7 +121,7 @@ button {
 .widget-panel {
   background:
     radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.025), transparent 25%),
-    linear-gradient(145deg, #141614 0%, #0f1110 52%, #0a0c0b 100%);
+    linear-gradient(145deg, rgb(var(--panel-tint)) 0%, rgb(var(--graphite-800)) 52%, rgb(var(--graphite-900)) 100%);
 }
 
 .widget-panel::after {
@@ -79,13 +136,13 @@ button {
 .display-well {
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.015), transparent 30%),
-    #080908;
+    rgb(var(--graphite-950));
 }
 
 .schedule-panel {
   background:
     radial-gradient(circle at 8% 0%, rgba(255, 255, 255, 0.035), transparent 30%),
-    linear-gradient(145deg, #151715 0%, #0d0f0e 58%, #090a09 100%);
+    linear-gradient(145deg, rgb(var(--panel-tint)) 0%, rgb(var(--graphite-800)) 58%, rgb(var(--graphite-900)) 100%);
 }
 
 .schedule-label {
@@ -123,8 +180,8 @@ button {
 }
 
 .schedule-input:focus {
-  border-color: rgba(218, 166, 75, 0.6);
-  box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.66), 0 0 0 2px rgba(218, 166, 75, 0.15);
+  border-color: rgb(var(--signal-400) / 0.6);
+  box-shadow: inset 3px 3px 7px rgba(0, 0, 0, 0.66), 0 0 0 2px rgb(var(--signal-400) / 0.15);
 }
 
 .schedule-input::-webkit-calendar-picker-indicator {
@@ -169,8 +226,8 @@ button {
   border-radius: 999px;
   background: linear-gradient(
     to right,
-    #d5ad61 0,
-    #b77c2e var(--level),
+    rgb(var(--signal-300)) 0,
+    rgb(var(--signal-500)) var(--level),
     #080908 var(--level),
     #101210 100%
   );
@@ -203,7 +260,7 @@ button {
 .control-range::-moz-range-progress {
   height: 8px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #d5ad61, #b77c2e);
+  background: linear-gradient(90deg, rgb(var(--signal-300)), rgb(var(--signal-500)));
 }
 
 .control-range::-moz-range-thumb {
@@ -220,7 +277,7 @@ button {
 }
 
 .control-range:focus-visible::-webkit-slider-thumb {
-  box-shadow: 0 0 0 3px rgba(218, 166, 75, 0.42), 3px 4px 7px rgba(0, 0, 0, 0.62);
+  box-shadow: 0 0 0 3px rgb(var(--signal-400) / 0.42), 3px 4px 7px rgba(0, 0, 0, 0.62);
 }
 
 .titlebar-button,
@@ -256,7 +313,7 @@ button {
 
 .titlebar-button:focus-visible,
 .deck-button:focus-visible {
-  outline: 2px solid rgba(218, 166, 75, 0.8);
+  outline: 2px solid rgb(var(--signal-400) / 0.8);
   outline-offset: 2px;
 }
 
@@ -272,22 +329,38 @@ button {
 
 .cover-bliss {
   background:
-    linear-gradient(135deg, transparent 44%, rgba(213, 173, 97, 0.62) 44% 48%, transparent 48%),
+    linear-gradient(135deg, transparent 44%, rgb(var(--signal-300) / 0.62) 44% 48%, transparent 48%),
     repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 11px),
     #151a17;
 }
 
 .cover-ethereal {
   background:
-    radial-gradient(circle at 38% 40%, rgba(213, 173, 97, 0.6) 0 12%, transparent 13%),
+    radial-gradient(circle at 38% 40%, rgb(var(--signal-300) / 0.6) 0 12%, transparent 13%),
     radial-gradient(circle at 50% 50%, transparent 0 27%, rgba(255, 255, 255, 0.08) 28% 29%, transparent 30%),
     #171512;
 }
 
 .cover-latino {
   background:
-    linear-gradient(112deg, transparent 0 34%, rgba(213, 173, 97, 0.55) 35% 42%, transparent 43%),
+    linear-gradient(112deg, transparent 0 34%, rgb(var(--signal-300) / 0.55) 35% 42%, transparent 43%),
     linear-gradient(70deg, #080908 0 35%, #1b1e1b 36% 58%, #0e100f 59%);
+}
+
+.cover-custom {
+  background:
+    radial-gradient(circle at 72% 28%, rgb(var(--signal-300) / 0.72) 0 9%, transparent 10%),
+    linear-gradient(145deg, rgb(var(--signal-500) / 0.42), transparent 54%),
+    rgb(var(--graphite-700));
+}
+
+.horizontal-collection {
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+}
+
+.horizontal-collection > * {
+  scroll-snap-align: start;
 }
 
 .instrument-dial {

@@ -10,6 +10,10 @@ import { SystemVitalsWidget } from "./components/SystemVitalsWidget";
 import { TaskManager } from "./components/TaskManager";
 import { TitleBarActions } from "./components/TitleBarActions";
 import { VolumeWidget } from "./components/VolumeWidget";
+import {
+  DashboardCustomizationProvider,
+  ThemePicker,
+} from "./components/DashboardCustomization";
 
 /**
  * Renders the root control-panel shell and arranges the system widgets.
@@ -18,9 +22,10 @@ import { VolumeWidget } from "./components/VolumeWidget";
 export default function App() {
   // --- Dashboard Layout ---
   return (
-    <main className="relative min-h-[100dvh] overflow-x-hidden bg-graphite-950 text-stone-100">
-      <div className="ambient-light pointer-events-none fixed inset-0" />
-      <div className="noise-layer pointer-events-none fixed inset-0" />
+    <DashboardCustomizationProvider>
+      <main className="relative min-h-[100dvh] overflow-x-hidden bg-graphite-950 text-stone-100">
+        <div className="ambient-light pointer-events-none fixed inset-0" />
+        <div className="noise-layer pointer-events-none fixed inset-0" />
 
       <div className="relative mx-auto flex min-h-[100dvh] w-full max-w-[1600px] flex-col px-3 pb-3 pt-2 sm:px-5 sm:pb-5">
         <header
@@ -41,7 +46,8 @@ export default function App() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5">
+            <ThemePicker />
             <div className="hidden items-center gap-2 rounded-lg border border-black/50 bg-black/10 px-2.5 py-1.5 shadow-well sm:flex">
               <Power size={11} strokeWidth={1.9} className="text-signal-300" />
               <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-stone-500">System ready</span>
@@ -62,7 +68,8 @@ export default function App() {
           <SystemVitalsWidget />
           <PomodoroTimer />
         </div>
-      </div>
-    </main>
+        </div>
+      </main>
+    </DashboardCustomizationProvider>
   );
 }

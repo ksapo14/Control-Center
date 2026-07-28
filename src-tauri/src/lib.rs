@@ -276,6 +276,48 @@ fn open_vscode_directory(path: String) -> Result<(), String> {
         .map_err(|error| command_error("Visual Studio Code could not be launched", error))
 }
 
+#[tauri::command]
+/// Launches a user-selected Windows executable after validating its canonical path.
+///
+/// # Arguments
+/// * `path` - Executable path returned by the native file picker.
+///
+/// # Returns
+/// Success after Windows accepts the process launch.
+///
+/// # Errors
+/// Returns an error for missing files, non-executable extensions, unsupported platforms, or launch failures.
+fn launch_custom_app(path: String) -> Result<(), String> {
+    let selected = PathBuf::from(path);
+    let executable = selected
+        .canonicalize()
+        .map_err(|error| command_error("The selected application could not be resolved", error))?;
+    if !executable.is_file()
+        || executable
+            .extension()
+            .and_then(|extension| extension.to_str())
+            .is_none_or(|extension| !extension.eq_ignore_ascii_case("exe"))
+    {
+        return Err("Choose a valid Windows .exe application".into());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        return Command::new(executable)
+            .spawn()
+            .map(|_| ())
+            .map_err(|error| {
+                command_error("Windows could not launch the selected application", error)
+            });
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = executable;
+        Err("Custom application launching is currently configured for Windows".into())
+    }
+}
+
 #[cfg(target_os = "windows")]
 /// Owns COM initialization for the current thread and balances it on drop.
 struct ComApartment(bool);
@@ -1015,13 +1057,13 @@ mod audio_band_tests {
     #[test]
     fn separates_bass_mids_and_treble_without_stereo_cancellation() {
         let bass = analyze_frequency(80.0);
-        assert!(bass.bass > bass.mids && bass.bass > bass.treble);
+        assert!(bass.bass > bass.mids * 2.5 && bass.bass > bass.treble * 2.5);
 
         let mids = analyze_frequency(1_000.0);
-        assert!(mids.mids > mids.bass && mids.mids > mids.treble);
+        assert!(mids.mids > mids.bass * 2.5 && mids.mids > mids.treble * 2.5);
 
         let treble = analyze_frequency(10_000.0);
-        assert!(treble.treble > treble.bass && treble.treble > treble.mids);
+        assert!(treble.treble > treble.bass * 2.5 && treble.treble > treble.mids * 2.5);
     }
 }
 
@@ -1865,6 +1907,7 @@ pub fn run() {
             launch_app,
             launch_chrome_site,
             open_vscode_directory,
+            launch_custom_app,
             connect_bluetooth_device,
             disconnect_bluetooth_device,
             get_bluetooth_device_status,

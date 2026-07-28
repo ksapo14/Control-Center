@@ -118,6 +118,7 @@ export function BluetoothWidget() {
 
   return (
     <WidgetFrame
+      widgetId="bluetooth"
       title="Bluetooth audio"
       icon={<Bluetooth size={16} strokeWidth={1.7} />}
       className="md:col-span-2 lg:col-span-4"

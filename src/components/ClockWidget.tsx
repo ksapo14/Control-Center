@@ -46,6 +46,7 @@ export function ClockWidget() {
   // --- Widget Rendering ---
   return (
     <WidgetFrame
+      widgetId="clock"
       title="Local time"
       icon={<Clock3 size={16} strokeWidth={1.7} />}
       className="lg:col-span-3"

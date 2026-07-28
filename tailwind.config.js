@@ -5,15 +5,15 @@ export default {
     extend: {
       colors: {
         graphite: {
-          950: "#060706",
-          900: "#0a0c0b",
-          800: "#101210",
-          700: "#171a18",
+          950: "rgb(var(--graphite-950) / <alpha-value>)",
+          900: "rgb(var(--graphite-900) / <alpha-value>)",
+          800: "rgb(var(--graphite-800) / <alpha-value>)",
+          700: "rgb(var(--graphite-700) / <alpha-value>)",
         },
         signal: {
-          300: "#f2c772",
-          400: "#daa64b",
-          500: "#bd8331",
+          300: "rgb(var(--signal-300) / <alpha-value>)",
+          400: "rgb(var(--signal-400) / <alpha-value>)",
+          500: "rgb(var(--signal-500) / <alpha-value>)",
         },
       },
       boxShadow: {
@@ -28,7 +28,7 @@ export default {
         "well":
           "inset 4px 4px 10px rgba(0,0,0,0.58), inset -2px -2px 6px rgba(255,255,255,0.035)",
         "amber-led":
-          "0 0 8px rgba(218,166,75,0.75), inset 0 1px 1px rgba(255,255,255,0.8)",
+          "0 0 8px rgb(var(--signal-400) / 0.75), inset 0 1px 1px rgba(255,255,255,0.8)",
       },
       fontFamily: {
         display: ["Aptos Display", "Segoe UI Variable Display", "Segoe UI", "sans-serif"],
