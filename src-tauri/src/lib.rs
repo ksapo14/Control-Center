@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::{path::PathBuf, process::Command};
 use tauri::Manager;
 
-mod gemini_schedule;
 mod google_calendar;
+mod phone_mode;
 mod spotify;
 
 fn command_error(context: &str, error: impl std::fmt::Display) -> String {
@@ -2378,6 +2378,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(phone_mode::PhoneModeManager::default())
         .invoke_handler(tauri::generate_handler![
             launch_app,
             launch_chrome_site,
@@ -2406,8 +2407,10 @@ pub fn run() {
             google_calendar::disconnect_google_calendar,
             google_calendar::create_google_calendar_event,
             google_calendar::create_google_calendar_events,
-            gemini_schedule::get_gemini_schedule_status,
-            gemini_schedule::parse_schedule_with_gemini,
+            phone_mode::start_phone_mode,
+            phone_mode::stop_phone_mode,
+            phone_mode::get_phone_mode_status,
+            phone_mode::update_phone_mode_context,
             spotify::get_spotify_status,
             spotify::configure_spotify,
             spotify::connect_spotify,

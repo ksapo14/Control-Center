@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { Sun, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Play, SkipBack, SkipForward, Sun, Volume1, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
@@ -23,6 +23,8 @@ type ControlRailProps = {
   disabled?: boolean;
   onChange: (value: number) => void;
 };
+
+type MediaAction = "previous" | "play_pause" | "next";
 
 /**
  * Renders a labeled percentage control shared by volume and brightness.
@@ -70,6 +72,7 @@ export function VolumeWidget() {
   const [brightness, setBrightness] = useState(62);
   const [brightnessAvailable, setBrightnessAvailable] = useState(true);
   const [status, setStatus] = useState("Reading system controls");
+  const [mediaBusy, setMediaBusy] = useState<MediaAction | null>(null);
   const volumeTimer = useRef<number>();
   const brightnessTimer = useRef<number>();
 
@@ -93,7 +96,7 @@ export function VolumeWidget() {
       } else {
         setBrightnessAvailable(false);
       }
-      setStatus(brightnessResult.status === "fulfilled" ? "Audio and internal display" : "Brightness unavailable on this display");
+      setStatus(brightnessResult.status === "fulfilled" ? "Audio, media and internal display" : "Brightness unavailable on this display");
     });
 
     return () => {
@@ -133,16 +136,29 @@ export function VolumeWidget() {
     if (brightnessTimer.current) window.clearTimeout(brightnessTimer.current);
     brightnessTimer.current = window.setTimeout(() => {
       void invoke("set_system_brightness", { level: next })
-        .then(() => setStatus("Audio and internal display"))
+        .then(() => setStatus("Audio, media and internal display"))
         .catch((error: unknown) => setStatus(errorMessage(error)));
     }, 180);
+  };
+
+  const controlMedia = async (action: MediaAction) => {
+    if (mediaBusy) return;
+    setMediaBusy(action);
+    try {
+      if (isTauriRuntime()) await invoke("media_control", { action });
+      setStatus(action === "previous" ? "Previous track" : action === "next" ? "Next track" : "Play or pause sent");
+    } catch (error) {
+      setStatus(errorMessage(error));
+    } finally {
+      setMediaBusy(null);
+    }
   };
 
   // --- Widget Rendering ---
   return (
     <WidgetFrame
       widgetId="volume"
-      title="Audio and display"
+      title="Audio, media and display"
       icon={<Volume2 size={16} strokeWidth={1.7} />}
       className="lg:col-span-5"
     >
@@ -162,8 +178,22 @@ export function VolumeWidget() {
             onChange={changeBrightness}
           />
         </div>
-        <div className="mt-3 flex justify-end">
+        <div className="mt-3 flex items-end justify-between gap-3">
           <span className="sr-only" aria-live="polite">{status}</span>
+          <div>
+            <p className="mb-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-600">Media</p>
+            <div className="flex items-center gap-1.5">
+              <TactileButton aria-label="Previous track" title="Previous track" disabled={mediaBusy !== null} onClick={() => void controlMedia("previous")} data-control-action="media-previous" className="grid size-9 place-items-center">
+                <SkipBack size={16} strokeWidth={1.8} />
+              </TactileButton>
+              <TactileButton aria-label="Play or pause media" title="Play or pause" disabled={mediaBusy !== null} onClick={() => void controlMedia("play_pause")} data-control-action="media-play-pause" className="grid size-9 place-items-center">
+                <Play size={16} strokeWidth={1.8} />
+              </TactileButton>
+              <TactileButton aria-label="Next track" title="Next track" disabled={mediaBusy !== null} onClick={() => void controlMedia("next")} data-control-action="media-next" className="grid size-9 place-items-center">
+                <SkipForward size={16} strokeWidth={1.8} />
+              </TactileButton>
+            </div>
+          </div>
           <TactileButton aria-label="Mute system volume" onClick={() => changeVolume(0)} className="grid size-9 place-items-center">
             <VolumeGlyph level={volume} />
           </TactileButton>

@@ -17,8 +17,8 @@
         "fullscreen": true,
         "decorations": false,
         "resizable": true,
-        "transparent": false,
-        "backgroundColor": "#111312",
+        "transparent": true,
+        "backgroundColor": [0, 0, 0, 0],
         "visible": true
       }
     ],

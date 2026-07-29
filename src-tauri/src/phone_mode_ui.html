@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en" data-theme="tan">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#060706">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Control Panel">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="phone_mode_ui.css">
+  <script src="phone_mode_ui.js" defer></script>
+  <title>Control Panel</title>
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Phone mode</p>
+        <h1>Control Panel</h1>
+      </div>
+      <div id="connection" class="connection"><span class="connection-dot"></span><span id="connectionText">Not paired</span></div>
+    </header>
+
+    <p class="lede">Your desktop controls, arranged for a smaller screen.</p>
+
+    <section id="pairPanel" class="panel pair">
+      <h2>Pair with this computer</h2>
+      <p>Enter the six-digit code shown in Phone Mode on the desktop.</p>
+      <form id="pairForm" class="pair-row">
+        <input id="pairCode" class="code-input" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="one-time-code" aria-label="Six-digit pairing code" placeholder="000000">
+        <button id="pairButton" class="primary" type="submit">Connect</button>
+      </form>
+    </section>
+
+    <div id="controls" class="controls">
+      <nav class="view-tabs" role="tablist" aria-label="Phone Mode sections">
+        <button id="remoteTab" class="view-tab active" type="button" role="tab" aria-selected="true" aria-controls="remoteView" data-view-target="remoteView">Remote</button>
+        <button id="windowsTab" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="windowsView" data-view-target="windowsView">Open apps</button>
+        <button id="scheduleTab" class="view-tab" type="button" role="tab" aria-selected="false" aria-controls="scheduleView" data-view-target="scheduleView">Schedule</button>
+      </nav>
+
+      <section id="remoteView" class="app-view active" role="tabpanel" aria-labelledby="remoteTab">
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">System</h2><span class="section-note">Changes apply immediately</span></div>
+          <div class="panel range-panel">
+            <div class="range-row">
+              <div class="range-meta"><span>Volume</span><span id="volumeValue" class="range-value">50%</span></div>
+              <input id="volume" type="range" min="0" max="100" value="50" aria-label="System volume">
+            </div>
+            <div class="range-row">
+              <div class="range-meta"><span>Brightness</span><span id="brightnessValue" class="range-value">50%</span></div>
+              <input id="brightness" type="range" min="0" max="100" value="50" aria-label="Display brightness">
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">Media</h2></div>
+          <div class="media-grid">
+            <button class="action" type="button" data-action="media_previous" aria-label="Previous track"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM18.2 6.1v11.8L9.8 12z"/></svg></button>
+            <button class="action" type="button" data-action="media_play_pause" aria-label="Play or pause"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4l8 8-8 8zm10 0h3v16h-3z"/></svg></button>
+            <button class="action" type="button" data-action="media_next" aria-label="Next track"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM5.8 6.1v11.8l8.4-5.9z"/></svg></button>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">Quick capture</h2><span class="section-note">Send to the desktop inbox</span></div>
+          <form id="phoneCaptureForm" class="phone-capture-row">
+            <input id="phoneCaptureText" class="field-input" type="text" maxlength="2000" autocomplete="off" placeholder="Capture a thought…" aria-label="Capture text">
+            <button class="primary" type="submit">Save</button>
+          </form>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">Project scenes</h2></div>
+          <div id="scenes" class="button-grid"></div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">App groups</h2></div>
+          <div id="groups" class="button-grid"></div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">Quick launch</h2></div>
+          <div id="launchers" class="button-grid"></div>
+        </section>
+
+        <div class="footer-actions">
+          <button id="workspaceButton" class="utility" type="button">Open apps</button>
+          <button id="showDesktopButton" class="utility" type="button">Show desktop UI</button>
+          <button id="exitButton" class="danger" type="button">Exit phone mode</button>
+          <button id="refreshButton" class="utility" type="button">Refresh controls</button>
+        </div>
+      </section>
+
+      <section id="windowsView" class="app-view" role="tabpanel" aria-labelledby="windowsTab" hidden>
+        <div class="view-heading">
+          <div><p class="eyebrow">Window workspace</p><h2>Arrange open apps</h2><p>Drag a window block or its corner handle. Changes stay staged until Save.</p></div>
+          <button id="workspaceRefresh" class="compact-button" type="button">Refresh</button>
+        </div>
+        <div id="workspaceNotice" class="inline-notice" role="status" aria-live="polite">Open this section to read the current desktop.</div>
+        <div id="monitorList" class="monitor-list"></div>
+
+        <section id="selectedWindowPanel" class="panel editor-panel" hidden>
+          <div class="section-head"><div><p class="micro-label">Selected window</p><h3 id="selectedWindowTitle">Window</h3></div><span id="selectedWindowApp" class="section-note"></span></div>
+          <label class="field-label" for="selectedMonitor">Display</label>
+          <select id="selectedMonitor" class="field-input"></select>
+
+          <p class="field-label">Snap layout</p>
+          <div class="preset-grid">
+            <button type="button" data-preset="full">Full</button><button type="button" data-preset="left">Left</button><button type="button" data-preset="right">Right</button>
+            <button type="button" data-preset="top-left">Top left</button><button type="button" data-preset="top-right">Top right</button>
+            <button type="button" data-preset="bottom-left">Bottom left</button><button type="button" data-preset="bottom-right">Bottom right</button>
+          </div>
+
+          <p class="field-label">Window state</p>
+          <div class="state-grid">
+            <button type="button" data-window-state="normal">Normal</button><button type="button" data-window-state="minimized">Minimize</button><button type="button" data-window-state="maximized">Maximize</button>
+          </div>
+
+          <p class="field-label">Exact geometry</p>
+          <div class="geometry-grid">
+            <label>X<input id="geometryX" type="number" inputmode="numeric"></label>
+            <label>Y<input id="geometryY" type="number" inputmode="numeric"></label>
+            <label>Width<input id="geometryWidth" type="number" inputmode="numeric" min="160"></label>
+            <label>Height<input id="geometryHeight" type="number" inputmode="numeric" min="100"></label>
+          </div>
+        </section>
+
+        <button id="saveWorkspace" class="primary wide-primary" type="button" disabled>Save window layout</button>
+      </section>
+
+      <section id="scheduleView" class="app-view" role="tabpanel" aria-labelledby="scheduleTab" hidden>
+        <div class="view-heading">
+          <div><p class="eyebrow">Quick schedule</p><h2>Manual events</h2><p id="scheduleTimezone">Times use this phone’s current time zone.</p></div>
+          <span id="calendarState" class="status-tag">Checking</span>
+        </div>
+        <div id="scheduleNotice" class="inline-notice" role="status" aria-live="polite">Add one or more events, then submit the batch.</div>
+        <form id="scheduleForm">
+          <div id="eventRows" class="event-rows"></div>
+          <button id="addEventRow" class="utility add-row" type="button">+ Add event row</button>
+          <button id="submitEvents" class="primary wide-primary" type="submit">Add events to Calendar</button>
+        </form>
+        <div id="createdEvents" class="created-events"></div>
+      </section>
+
+    </div>
+
+    <p id="status" class="status" role="status" aria-live="polite"></p>
+    <p class="install-tip">In Safari, use Share → Add to Home Screen to keep this remote like an app.</p>
+  </main>
+</body>
+</html>

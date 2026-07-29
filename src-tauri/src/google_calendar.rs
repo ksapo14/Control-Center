@@ -953,3 +953,11 @@ pub(crate) async fn create_google_calendar_events(
         .await
         .map_err(|error| format!("The Calendar batch stopped unexpectedly: {error}"))?
 }
+
+/// Creates Calendar events on the already-dedicated Phone Mode request thread.
+pub(crate) fn create_google_calendar_events_for_phone(
+    app: tauri::AppHandle,
+    request: BatchCreateCalendarEventsRequest,
+) -> Result<BatchCreateCalendarEventsResult, String> {
+    create_events_blocking(app, request)
+}

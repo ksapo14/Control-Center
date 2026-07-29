@@ -4,6 +4,8 @@ import { BluetoothWidget } from "./components/BluetoothWidget";
 import { ClockWidget } from "./components/ClockWidget";
 import { PomodoroTimer } from "./components/PomodoroTimer";
 import { Planning } from "./components/Planning";
+import { PhoneMode } from "./components/PhoneMode";
+import { ProductivityEnvironment } from "./components/ProductivityEnvironment";
 import { KeyboardShortcutControls } from "./components/KeyboardShortcuts";
 import { QuickSchedule } from "./components/QuickSchedule";
 import { SpotifyWidget } from "./components/SpotifyWidget";
@@ -30,7 +32,7 @@ export default function App() {
   return (
     <DashboardCustomizationProvider>
       <ControlCenterProvider>
-      <main className="relative min-h-[100dvh] overflow-x-hidden bg-graphite-950 text-stone-100">
+      <main className="dashboard-root relative min-h-[100dvh] overflow-x-hidden text-stone-100">
         <div className="ambient-light pointer-events-none fixed inset-0" />
         <div className="noise-layer pointer-events-none fixed inset-0" />
 
@@ -41,6 +43,7 @@ export default function App() {
         >
           <div className="min-w-6 flex-1 self-stretch" data-tauri-drag-region />
           <div className="header-control-strip flex min-w-0 max-w-full flex-shrink items-center justify-end gap-1.5 overflow-x-auto sm:gap-2.5">
+            <PhoneMode />
             <ThemePicker />
             <ControlCenterControls />
             <KeyboardShortcutControls />
@@ -49,6 +52,7 @@ export default function App() {
             <Planning />
             <QuickSchedule />
             <BatteryStatus />
+            <ProductivityEnvironment />
             <TitleBarActions />
           </div>
         </header>

@@ -11,7 +11,6 @@ import {
   FileKey2,
   Link2,
   LoaderCircle,
-  Sparkles,
   Trash2,
   Unplug,
   X,
@@ -26,32 +25,10 @@ type CalendarStatus = {
   connected: boolean;
 };
 
-type GeminiStatus = {
-  configured: boolean;
-  model: string;
-};
-
 type CreatedEvent = {
   id: string;
   htmlLink: string;
   summary: string;
-};
-
-type ScheduleDraft = {
-  title: string;
-  start: string;
-  end: string;
-  description: string;
-  location: string;
-  colorId: string;
-  needsReview: boolean;
-  warnings: string[];
-};
-
-type GeminiDraftResponse = {
-  model: string;
-  events: ScheduleDraft[];
-  warnings: string[];
 };
 
 type FailedEvent = {
@@ -74,8 +51,7 @@ type ManualEventRow = {
   colorId: string;
 };
 
-type ScheduleMode = "gemini" | "manual";
-type BusyAction = "status" | "import" | "connect" | "disconnect" | "draft" | "save" | "batch" | null;
+type BusyAction = "status" | "import" | "connect" | "disconnect" | "save" | null;
 
 const calendarColors = [
   { id: "1", name: "Lavender", value: "#7986cb" },
@@ -100,12 +76,6 @@ function localDateValue(date: Date) {
 
 function localTimeValue(date: Date) {
   return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
-}
-
-function localDateTimeValue(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return `${localDateValue(date)}T${localTimeValue(date)}`;
 }
 
 function initialSchedule() {
@@ -143,23 +113,10 @@ function nextManualSchedule(previous?: ManualEventRow) {
   };
 }
 
-function editableDraft(event: ScheduleDraft): ScheduleDraft {
-  return {
-    ...event,
-    start: localDateTimeValue(event.start),
-    end: localDateTimeValue(event.end),
-  };
-}
-
-/** Provides AI-assisted multi-event drafting and manual Google Calendar creation. */
+/** Provides lightweight manual Google Calendar batch scheduling. */
 export function QuickSchedule() {
   const [open, setOpen] = useState(false);
-  const [mode, setMode] = useState<ScheduleMode>("gemini");
   const [status, setStatus] = useState<CalendarStatus>({ configured: false, connected: false });
-  const [geminiStatus, setGeminiStatus] = useState<GeminiStatus>({ configured: false, model: "gemini-3.5-flash" });
-  const [instructions, setInstructions] = useState("");
-  const [drafts, setDrafts] = useState<ScheduleDraft[]>([]);
-  const [draftWarnings, setDraftWarnings] = useState<string[]>([]);
   const [manualRows, setManualRows] = useState<ManualEventRow[]>(() => [createManualRow()]);
   const [busy, setBusy] = useState<BusyAction>(null);
   const [notice, setNotice] = useState("");
@@ -168,7 +125,6 @@ export function QuickSchedule() {
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
-  const instructionsRef = useRef<HTMLTextAreaElement>(null);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const showNotice = (message: string, kind: "info" | "error" | "success" = "info") => {
@@ -183,16 +139,11 @@ export function QuickSchedule() {
     }
     setBusy("status");
     try {
-      const [calendar, gemini] = await Promise.all([
-        invoke<CalendarStatus>("get_google_calendar_status"),
-        invoke<GeminiStatus>("get_gemini_schedule_status"),
-      ]);
+      const calendar = await invoke<CalendarStatus>("get_google_calendar_status");
       setStatus(calendar);
-      setGeminiStatus(gemini);
-      if (calendar.connected && gemini.configured) showNotice("Gemini drafting and Google Calendar are ready.", "success");
-      else if (!gemini.configured) showNotice("Add GEMINI_API_KEY to the project-root .env file, then restart the app.");
-      else if (calendar.configured) showNotice("Gemini is ready. Connect Google Calendar to schedule reviewed drafts.");
-      else showNotice("Gemini is ready. Import a Google Desktop OAuth JSON file to connect Calendar.");
+      if (calendar.connected) showNotice("Google Calendar is ready.", "success");
+      else if (calendar.configured) showNotice("Connect Google Calendar to schedule events.");
+      else showNotice("Import a Google Desktop OAuth JSON file to connect Calendar.");
     } catch (error) {
       showNotice(errorMessage(error), "error");
     } finally {
@@ -251,11 +202,10 @@ export function QuickSchedule() {
   useEffect(() => {
     if (!open) return;
     const timer = window.setTimeout(() => {
-      if (mode === "gemini") instructionsRef.current?.focus();
-      else titleRef.current?.focus();
+      titleRef.current?.focus();
     }, 80);
     return () => window.clearTimeout(timer);
-  }, [mode, open]);
+  }, [open]);
 
   const importCredentials = async () => {
     if (!isTauriRuntime()) return showNotice("Open the installed desktop app to import OAuth credentials.", "error");
@@ -304,91 +254,6 @@ export function QuickSchedule() {
       const next = await invoke<CalendarStatus>("disconnect_google_calendar");
       setStatus(next);
       showNotice("Calendar disconnected from this PC.");
-    } catch (error) {
-      showNotice(errorMessage(error), "error");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const draftEvents = async (event: FormEvent) => {
-    event.preventDefault();
-    setCreated([]);
-    if (!instructions.trim()) return showNotice("Describe at least one event.", "error");
-    if (!geminiStatus.configured) return showNotice("Add GEMINI_API_KEY to .env and restart the app first.", "error");
-
-    setBusy("draft");
-    showNotice("Gemini is turning your instructions into editable event drafts...");
-    try {
-      const result = await invoke<GeminiDraftResponse>("parse_schedule_with_gemini", {
-        request: {
-          instructions: instructions.trim(),
-          timeZone: timezone,
-          referenceTime: new Date().toISOString(),
-        },
-      });
-      setDrafts(result.events.map(editableDraft));
-      setDraftWarnings(result.warnings);
-      const reviewCount = result.events.filter((item) => item.needsReview).length;
-      showNotice(
-        reviewCount > 0
-          ? `Drafted ${result.events.length} event${result.events.length === 1 ? "" : "s"}; ${reviewCount} need extra review.`
-          : `Drafted ${result.events.length} event${result.events.length === 1 ? "" : "s"}. Review before scheduling.`,
-        "success",
-      );
-    } catch (error) {
-      showNotice(errorMessage(error), "error");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const updateDraft = (index: number, update: Partial<ScheduleDraft>) => {
-    setDrafts((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...update } : item)));
-  };
-
-  const removeDraft = (index: number) => {
-    setDrafts((current) => current.filter((_, itemIndex) => itemIndex !== index));
-  };
-
-  const scheduleDrafts = async () => {
-    if (drafts.length === 0) return showNotice("Draft at least one event first.", "error");
-    if (!status.connected) return showNotice("Connect Google Calendar before scheduling.", "error");
-
-    const events = [];
-    for (const [index, draft] of drafts.entries()) {
-      const start = new Date(draft.start);
-      const end = new Date(draft.end);
-      if (!draft.title.trim()) return showNotice(`Draft ${index + 1} needs a title.`, "error");
-      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
-        return showNotice(`Draft ${index + 1} needs a valid end time after its start.`, "error");
-      }
-      events.push({
-        title: draft.title.trim(),
-        start: start.toISOString(),
-        end: end.toISOString(),
-        description: draft.description.trim() || null,
-        location: draft.location.trim() || null,
-        colorId: draft.colorId || null,
-      });
-    }
-
-    setBusy("batch");
-    setCreated([]);
-    showNotice(`Adding ${events.length} reviewed event${events.length === 1 ? "" : "s"} to your primary calendar...`);
-    try {
-      const result = await invoke<BatchCreateResult>("create_google_calendar_events", { request: { events } });
-      setCreated(result.created);
-      if (result.failed.length === 0) {
-        setDrafts([]);
-        setDraftWarnings([]);
-        showNotice(`Added ${result.created.length} event${result.created.length === 1 ? "" : "s"} to Google Calendar.`, "success");
-      } else {
-        const failedIndexes = new Set(result.failed.map((item) => item.index));
-        setDrafts((current) => current.filter((_, index) => failedIndexes.has(index)));
-        const detail = result.failed.map((item) => `${item.title}: ${item.error}`).join(" ");
-        showNotice(`${result.created.length} added; ${result.failed.length} failed. ${detail}`, "error");
-      }
     } catch (error) {
       showNotice(errorMessage(error), "error");
     } finally {
@@ -552,105 +417,6 @@ export function QuickSchedule() {
                   </div>
                 </section>
 
-                <div className="mb-5 grid grid-cols-2 gap-1 rounded-[11px] border border-black/70 bg-black/30 p-1" role="tablist" aria-label="Scheduling method">
-                  <button type="button" role="tab" aria-selected={mode === "gemini"} onClick={() => setMode("gemini")} className={`flex h-9 items-center justify-center gap-2 rounded-[8px] text-[11px] font-semibold transition ${mode === "gemini" ? "border border-white/[0.08] bg-white/[0.055] text-stone-100 shadow-skeuo-raised" : "text-stone-500 hover:text-stone-300"}`}><Sparkles size={14} className="text-signal-300" /> Describe with Gemini</button>
-                  <button type="button" role="tab" aria-selected={mode === "manual"} onClick={() => setMode("manual")} className={`flex h-9 items-center justify-center gap-2 rounded-[8px] text-[11px] font-semibold transition ${mode === "manual" ? "border border-white/[0.08] bg-white/[0.055] text-stone-100 shadow-skeuo-raised" : "text-stone-500 hover:text-stone-300"}`}><Clock3 size={14} /> Manual events</button>
-                </div>
-
-                {mode === "gemini" ? (
-                  <div role="tabpanel">
-                    <form onSubmit={(event) => void draftEvents(event)}>
-                      <div className="mb-3 flex items-center justify-between gap-3">
-                        <label htmlFor="gemini-schedule-instructions" className="schedule-label mb-0">Schedule instructions</label>
-                        <span className={`flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.12em] ${geminiStatus.configured ? "text-emerald-400" : "text-stone-600"}`}>
-                          <span className={`size-1.5 rounded-full ${geminiStatus.configured ? "bg-emerald-400" : "bg-stone-700"}`} /> {geminiStatus.model}
-                        </span>
-                      </div>
-                      <textarea
-                        ref={instructionsRef}
-                        id="gemini-schedule-instructions"
-                        value={instructions}
-                        onChange={(event) => setInstructions(event.target.value)}
-                        placeholder="Tomorrow: design review at 10 for 45 minutes, lunch with Sam at noon, and focus time from 2–4. Make focus time sage."
-                        maxLength={6000}
-                        className="schedule-input h-28 resize-y py-3 leading-relaxed"
-                      />
-                      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-[10px] leading-relaxed text-stone-600">Use normal language. Dates resolve in {timezone}; drafts stay editable and capacity spikes retry automatically.</p>
-                        <TactileButton type="submit" disabled={!geminiStatus.configured || isWorking || !instructions.trim()} className="h-10 shrink-0 px-4">
-                          <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100">{busy === "draft" ? <LoaderCircle size={15} className="animate-spin text-signal-300" /> : <Sparkles size={15} className="text-signal-300" />} Draft events</span>
-                        </TactileButton>
-                      </div>
-                    </form>
-
-                    {draftWarnings.length > 0 && (
-                      <div className="mt-4 rounded-[10px] border border-signal-500/30 bg-signal-500/[0.06] px-3 py-2.5 text-[11px] leading-relaxed text-signal-300">
-                        {draftWarnings.map((warning) => <p key={warning}>{warning}</p>)}
-                      </div>
-                    )}
-
-                    {drafts.length > 0 && (
-                      <section className="mt-5 border-t border-white/[0.05] pt-5" aria-label="Gemini event drafts">
-                        <div className="mb-3 flex items-center justify-between">
-                          <div>
-                            <h3 className="text-sm font-semibold text-stone-200">Review drafts</h3>
-                            <p className="mt-1 text-[10px] text-stone-600">Nothing is scheduled until you confirm below.</p>
-                          </div>
-                          <span className="rounded-full border border-black/60 bg-black/20 px-2.5 py-1 font-mono text-[9px] uppercase tracking-[0.12em] text-stone-500">{drafts.length} event{drafts.length === 1 ? "" : "s"}</span>
-                        </div>
-
-                        <div className="space-y-3">
-                          {drafts.map((draft, index) => (
-                            <article key={index} className="rounded-[13px] border border-black/70 bg-black/15 p-3.5 shadow-well">
-                              <div className="mb-3 flex items-center justify-between gap-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-[9px] uppercase tracking-[0.16em] text-stone-600">Draft {index + 1}</span>
-                                  {draft.needsReview && <span className="rounded-full border border-signal-500/30 bg-signal-500/[0.08] px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.08em] text-signal-300">Check details</span>}
-                                </div>
-                                <button type="button" onClick={() => removeDraft(index)} disabled={isWorking} className="grid size-8 place-items-center rounded-[8px] text-stone-600 transition hover:bg-red-950/30 hover:text-red-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400" aria-label={`Remove draft ${index + 1}`}><Trash2 size={14} /></button>
-                              </div>
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                <label className="sm:col-span-2">
-                                  <span className="schedule-label">Title</span>
-                                  <input type="text" value={draft.title} onChange={(event) => updateDraft(index, { title: event.target.value })} maxLength={512} className="schedule-input" />
-                                </label>
-                                <label>
-                                  <span className="schedule-label">Starts</span>
-                                  <input type="datetime-local" value={draft.start} onChange={(event) => updateDraft(index, { start: event.target.value })} className="schedule-input" />
-                                </label>
-                                <label>
-                                  <span className="schedule-label">Ends</span>
-                                  <input type="datetime-local" value={draft.end} onChange={(event) => updateDraft(index, { end: event.target.value })} className="schedule-input" />
-                                </label>
-                                <label>
-                                  <span className="schedule-label">Location</span>
-                                  <input type="text" value={draft.location} onChange={(event) => updateDraft(index, { location: event.target.value })} maxLength={1024} placeholder="Optional" className="schedule-input" />
-                                </label>
-                                <label>
-                                  <span className="schedule-label">Color</span>
-                                  <select value={draft.colorId} onChange={(event) => updateDraft(index, { colorId: event.target.value })} className="schedule-input">
-                                    <option value="">Calendar default</option>
-                                    {calendarColors.map((color) => <option key={color.id} value={color.id}>{color.name}</option>)}
-                                  </select>
-                                </label>
-                                <label className="sm:col-span-2">
-                                  <span className="schedule-label">Description</span>
-                                  <textarea value={draft.description} onChange={(event) => updateDraft(index, { description: event.target.value })} maxLength={8192} placeholder="Optional" className="schedule-input h-20 resize-y py-3 leading-relaxed" />
-                                </label>
-                              </div>
-                              {draft.warnings.length > 0 && (
-                                <div className="mt-3 flex gap-2 rounded-[9px] border border-signal-500/25 bg-signal-500/[0.055] px-3 py-2 text-[10px] leading-relaxed text-signal-300">
-                                  <AlertCircle size={13} className="mt-0.5 shrink-0" />
-                                  <div>{draft.warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>
-                                </div>
-                              )}
-                            </article>
-                          ))}
-                        </div>
-                      </section>
-                    )}
-                  </div>
-                ) : (
                   <form id="manual-schedule-form" onSubmit={(event) => void createManualEvents(event)} role="tabpanel">
                     <div className="mb-3 flex items-end justify-between gap-3">
                       <div>
@@ -716,7 +482,6 @@ export function QuickSchedule() {
                       <span aria-hidden="true" className="text-base font-normal leading-none text-signal-300">+</span> Add event row
                     </button>
                   </form>
-                )}
 
                 <div className={`mt-5 flex min-h-11 items-start gap-2.5 rounded-[10px] border px-3 py-2.5 ${noticeKind === "error" ? "border-red-900/50 bg-red-950/20 text-red-300" : noticeKind === "success" ? "border-emerald-900/50 bg-emerald-950/20 text-emerald-300" : "border-black/60 bg-black/15 text-stone-500"}`} aria-live="polite">
                   {isWorking ? <LoaderCircle size={14} className="mt-0.5 shrink-0 animate-spin" /> : noticeKind === "error" ? <AlertCircle size={14} className="mt-0.5 shrink-0" /> : noticeKind === "success" ? <Check size={14} className="mt-0.5 shrink-0" /> : <Clock3 size={14} className="mt-0.5 shrink-0" />}
@@ -731,15 +496,9 @@ export function QuickSchedule() {
                   </div>
                   <div className="flex shrink-0 items-center justify-end gap-2">
                     <button type="button" onClick={closeDialog} className="h-10 rounded-[10px] px-4 text-[12px] font-medium text-stone-500 transition hover:text-stone-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-signal-400">Cancel</button>
-                    {mode === "gemini" ? (
-                      <TactileButton type="button" onClick={() => void scheduleDrafts()} disabled={!status.connected || isWorking || drafts.length === 0} className="h-10 min-w-[160px] px-4">
-                        <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100"><CalendarPlus size={15} className="text-signal-300" /> Schedule {drafts.length || "drafts"}</span>
-                      </TactileButton>
-                    ) : (
-                      <TactileButton type="submit" form="manual-schedule-form" disabled={!status.connected || isWorking || manualRows.length === 0} className="h-10 min-w-[160px] px-4">
-                        <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100"><CalendarPlus size={15} className="text-signal-300" /> Add {manualRows.length} to Calendar</span>
-                      </TactileButton>
-                    )}
+                    <TactileButton type="submit" form="manual-schedule-form" disabled={!status.connected || isWorking || manualRows.length === 0} className="h-10 min-w-[160px] px-4">
+                      <span className="flex items-center justify-center gap-2 text-[12px] font-semibold text-stone-100"><CalendarPlus size={15} className="text-signal-300" /> Add {manualRows.length} to Calendar</span>
+                    </TactileButton>
                   </div>
                 </div>
               </div>

@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { TRACKER_SYNC_EVENT, TRACKER_UPDATED_EVENT } from "../lib/productivity";
 import { TactileButton } from "./TactileButton";
 
 type TaskItem = {
@@ -177,6 +178,7 @@ export function TaskHabitTracker() {
     const timer = window.setTimeout(() => {
       try {
         window.localStorage.setItem(TRACKER_STORAGE_KEY, JSON.stringify({ version: 1, tasks, habits } satisfies TrackerData));
+        window.dispatchEvent(new CustomEvent(TRACKER_UPDATED_EVENT));
         setSaveState("saved");
       } catch {
         setSaveState("error");
@@ -184,6 +186,16 @@ export function TaskHabitTracker() {
     }, 160);
     return () => window.clearTimeout(timer);
   }, [habits, tasks]);
+
+  useEffect(() => {
+    const syncFromEnvironment = () => {
+      const next = restoreTracker();
+      setTasks(next.tasks);
+      setHabits(next.habits);
+    };
+    window.addEventListener(TRACKER_SYNC_EVENT, syncFromEnvironment);
+    return () => window.removeEventListener(TRACKER_SYNC_EVENT, syncFromEnvironment);
+  }, []);
 
   const closeDialog = () => {
     setOpen(false);

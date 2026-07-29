@@ -20,8 +20,11 @@ Fork it, adapt the controls to your own computer, replace the integrations, rede
 - An application launcher for selected desktop apps, websites, and VS Code folders.
 - A task manager for viewing and force-closing visible application windows.
 - Spotify playback status, transport controls, and playlist shortcuts.
-- Gemini-assisted natural-language scheduling with editable single- or multi-event drafts, plus a lightweight tabular editor for creating multiple manual Google Calendar events at once.
+- A lightweight tabular Quick Schedule editor for creating multiple manual Google Calendar events at once.
 - A local task checklist and habit tracker with due dates, daily/weekday/weekly rhythms, completion history, and calculated streaks.
+- A unified Productivity Environment with a daily timeline, quick capture inbox, project scenes, meeting preparation, resumable focus sessions, attention triage, and an on-demand clipboard shelf.
+- A universal command bar (`Ctrl+K`) and quick-capture shortcut (`Ctrl+Shift+C`) that work anywhere inside the panel.
+- A temporary, paired Phone Mode remote with matching desktop themes, system/media controls, quick capture, project scenes, quick launches, app groups, a touch window-layout editor, and manual Google Calendar batch scheduling on the same local network.
 - A configurable Pomodoro timer with an audio-reactive focus background. Separate blobs respond to bass, midrange, and treble energy from Windows loopback audio.
 - Global media-key controls and native window minimize/close actions.
 
@@ -33,7 +36,11 @@ Fork it, adapt the controls to your own computer, replace the integrations, rede
 | Native backend | Rust, Windows APIs, PowerShell/CIM |
 | Interface | React 18, TypeScript, Vite |
 | Styling and motion | Tailwind CSS, Framer Motion |
-| Integrations | Spotify Web API, Gemini API, Google Calendar API |
+| Integrations | Spotify Web API, Google Calendar API |
+
+Phone Mode uses a small HTTP server embedded in the Rust process; it does not require Python, Flask, a cloud relay, or a second service installation.
+
+The Productivity Environment deliberately reuses the existing React/Tauri stack and browser storage. It adds no background service, database, sync daemon, or third-party package. Bounded local histories keep capture, timeline, scene, clipboard, meeting, session, and extension metadata from growing indefinitely. The extension registry is an in-process API for trusted bundled modules rather than an unrestricted remote plugin loader.
 
 The frontend lives in `src/`. Native commands and integrations live in `src-tauri/src/`. Most system-level features are deliberately implemented for Windows and return an unsupported-platform message elsewhere.
 
@@ -136,6 +143,30 @@ Several controls reflect the original personal setup and should be changed in a 
 
 Application discovery expects Chrome and VS Code in common Windows install locations. Minecraft Launcher and ChatGPT are resolved through the Windows Start Apps registry. A launcher will report an error when its target is not installed or has a different registered name.
 
+## Phone Mode: control from an iPhone
+
+Phone Mode turns the running desktop app into a temporary same-network remote. It is intended for moments when the laptop is nearby and running but the normal monitor setup is unavailable. It is not an internet remote-access service.
+
+1. Connect the iPhone and computer to the same trusted Wi-Fi network. Ethernet on the computer is also fine when both devices can reach each other on the same LAN.
+2. Open **Phone** in the top toolbar. Phone Mode prefers TCP port `4768`, automatically tries through `4777` if a port is already occupied, and displays the selected address plus a six-digit pairing code.
+3. Open the exact displayed `http://...:<port>/` address in Safari and enter the pairing code. The desktop window hides only after pairing succeeds, while the app keeps running to serve the phone dashboard.
+4. Use the phone interface for volume, supported display brightness, media keys, quick launches, saved app groups, window arrangement, and manual calendar batches. The phone palette follows the active Black, Tan, Green, Blue, or White desktop theme. **Show desktop UI** restores the local window without ending the remote session; **Exit phone mode** stops the listener and restores it.
+5. To keep the remote on the iPhone, open Safari's Share menu and choose **Add to Home Screen**. The embedded page includes a web app manifest, standalone-display metadata, theme colors, and a Home Screen icon. See Apple's [web-app configuration guide](https://developer.apple.com/library/archive/documentation/AppleApplications/Reference/SafariWebContent/ConfiguringWebApplications/ConfiguringWebApplications.html).
+
+The computer must remain awake with Control Panel running. Windows Defender Firewall may ask whether to allow the app to accept connections; allow it only on a trusted **Private** network. If the phone cannot connect, confirm both devices are on the same non-guest network and that client isolation is disabled. VPNs, guest Wi-Fi, and some managed networks can prevent local devices from reaching one another.
+
+The URL uses the computer's current LAN address and selected port so it can be bookmarked, but either can change when the computer joins another network or the preferred port is already occupied. In that case, reopen Phone Mode on the desktop and update the Home Screen bookmark with the exact displayed URL.
+
+### Phone Mode security model
+
+- The listener exists only while Phone Mode is active and accepts requests only for the displayed LAN IP, `localhost`, or `127.0.0.1`. It stops when Phone Mode ends or the desktop app exits.
+- A new six-digit code and 256-bit token are generated for every session. The code is rate-limited after repeated failures. Successful pairing installs the token as a same-origin, HTTP-only session cookie; the mobile UI also keeps a bearer-token fallback for reload compatibility. A later Phone Mode session invalidates both forms.
+- The mobile API is an explicit allowlist. It cannot execute arbitrary shell commands or invoke arbitrary Tauri commands, and it never returns launcher targets, Google or Spotify tokens, OAuth client data, environment variables, or files.
+- The authenticated **Open apps** view receives current window titles, process IDs, display geometry, and native window handles so it can render the touch editor. Save requests are revalidated against live process ownership, protected-window rules, minimum sizes, and connected monitor bounds before Windows is changed.
+- The authenticated **Schedule** view exposes only manual event creation and Calendar connection status. OAuth setup and sign-in remain desktop-only; refresh tokens and client credentials never cross the phone API.
+- Phone Mode is plain HTTP because it is a device-to-device LAN utility without a certificate service. Pairing prevents casual unauthorized control, but traffic is not encrypted. Use it only on a network you trust; do not port-forward ports `4768`–`4777`, expose them to the public internet, or use Phone Mode on public Wi-Fi.
+- Hiding is used instead of closing the desktop process so the phone dashboard remains available. Use **Show desktop UI** from the phone to restore it; if the phone is unavailable, restart Control Panel to begin a new session.
+
 ## Optional Spotify setup
 
 Spotify uses the Authorization Code flow with PKCE. The app stores only a Client ID; do not add a Spotify client secret.
@@ -160,7 +191,7 @@ For details, see Spotify's documentation for [PKCE authorization](https://develo
 
 Quick Schedule creates reviewed events in the connected account's primary Google Calendar. It requests the `calendar.events` OAuth scope.
 
-The **Manual events** tab provides Date, Title, Time from, Time to, and Color columns. Add as many rows as needed, review the table, and submit the complete set with one **Add to Calendar** action. Successfully created rows are cleared; if Google rejects an individual event, that row remains available for correction.
+Quick Schedule provides Date, Title, Time from, Time to, and Color columns. Add as many rows as needed, review the table, and submit the complete set with one **Add to Calendar** action. Successfully created rows are cleared; if Google rejects an individual event, that row remains available for correction.
 
 1. Create or select a project in [Google Cloud Console](https://console.cloud.google.com/).
 2. Enable the **Google Calendar API**.
@@ -172,55 +203,21 @@ The **Manual events** tab provides Date, Title, Time from, Time to, and Color co
 
 The imported OAuth client file is validated and copied into the local app configuration directory using Windows DPAPI encryption. The original downloaded JSON remains your responsibility: do not commit it, post it publicly, or send it to other people. Google may display an unverified-app warning while a privately developed OAuth app is in testing. Public distribution can require additional consent-screen configuration or verification. See Google's [Calendar authentication guidance](https://developers.google.com/workspace/calendar/api/auth).
 
-## Optional Gemini Quick Schedule setup
-
-The **Describe with Gemini** tab converts one natural-language sequence into one or more editable event drafts using `gemini-3.5-flash`. It does not create events automatically. Each result is validated by the Rust backend, shown in the review editor, and submitted to Google Calendar only when **Schedule** is selected.
-
-1. Create a Gemini API key in [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Copy the checked-in template to a local environment file:
-
-   ```powershell
-   Copy-Item .env.example .env
-   ```
-
-3. Replace the placeholder in `.env`:
-
-   ```dotenv
-   GEMINI_API_KEY=your_key_here
-   ```
-
-4. Start or restart the desktop app with `npm run tauri dev`.
-
-The backend reads `GEMINI_API_KEY` from the process environment or a local `.env` at runtime. For a standalone executable, either set the process environment variable or place `.env` beside the executable. Do not rename it to `VITE_GEMINI_API_KEY`: variables prefixed with `VITE_` are compiled into client-side JavaScript.
-
-### Gemini scheduling pipeline
-
-1. The React interface sends instructions, the current RFC 3339 timestamp, and the local IANA time zone to a Tauri command. It never receives the API key.
-2. The Rust backend calls Gemini's Interactions API with the key in the `x-goog-api-key` header, a strict calendar-only system instruction, and a closed JSON schema. Transient `408`, `429`, connection, timeout, and `5xx` failures are retried with bounded exponential backoff and jitter.
-3. The system instruction treats user text only as scheduling data, preserves explicit details, resolves relative dates against the supplied clock and time zone, defaults an omitted duration to 60 minutes, and flags ambiguities for review. It also rejects attempts inside the input to change roles, reveal instructions, or alter the output contract.
-4. The backend parses the structured response and independently checks event count, title length, RFC 3339 timestamps, chronological order, optional-field limits, and Calendar color IDs.
-5. Quick Schedule displays up to 25 editable drafts. A separate batch command validates the full edited set again before making Calendar API calls, and reports per-event failures without hiding successful creations.
-
-Example input:
-
-```text
-Tomorrow: design review at 10 for 45 minutes, lunch with Sam at noon,
-and focus time from 2–4. Make focus time sage.
-```
-
 ## Local data and privacy
 
 The app does not include analytics or a remote telemetry service. It does intentionally access local system information and optional third-party services to provide its features.
 
 - Spotify and Google refresh tokens are encrypted with Windows Data Protection API (DPAPI), tying them to the current Windows user profile.
-- Natural-language schedule instructions are sent to Google's Gemini API only when **Draft events** is selected. Review Google's API terms and data-use settings before sending sensitive calendar details.
 - The imported Google Desktop OAuth client configuration is also DPAPI-encrypted. Existing plaintext app configuration from older versions is encrypted and removed the next time it is loaded.
 - Spotify's Client ID is stored as plaintext because OAuth client IDs are public identifiers; no Spotify client secret is accepted or required.
 - Disconnecting an integration removes its saved token; it may not revoke the application's access at the service. Revoke access from the relevant Google or Spotify account settings when needed.
 - OAuth sign-in temporarily opens a listener on a random `127.0.0.1` port. A firewall or security product may ask for permission. The listener times out after three minutes.
+- Phone Mode temporarily opens one available TCP port from `4768`–`4777` to the local network only when explicitly started. Its short-lived pairing code, bearer token, and published control list stay in memory; the paired browser receives only the current session token for that site.
+- After pairing, Phone Mode can return visible window titles and display geometry to support its mobile layout editor. This information remains on the paired LAN connection and is not uploaded by Control Panel.
 - The Pomodoro visualizer captures the current Windows output stream through WASAPI loopback only while the timer is active. Audio is analyzed in memory into bass, midrange, and treble energy; the implementation does not save or upload the audio.
 - Process titles, hardware telemetry, battery state, volume, and brightness are read locally for display.
 - Tasks, habit definitions, and habit completion dates are saved only in browser local storage under `control-panel.tasks-habits`. They are included in Control Center backup exports and removed by the local-data reset action.
+- Productivity Environment scenes, captures, timeline blocks, shelf items, meetings, sessions, and extension preferences are saved only in browser local storage under `control-panel.productivity-environment`. They follow the same backup and reset behavior.
 
 Tauri stores integration files in its application configuration directory, normally under the current Windows user's roaming AppData directory using the `com.local.controlpanel` identifier.
 
@@ -228,9 +225,9 @@ Rebuilding or updating the app does not clear tasks, habits, plans, app groups, 
 
 ### Secrets and environment variables
 
-The repository does not contain API secrets. Local `.env` variants, private keys, downloaded credential JSON files, and integration token files are ignored by Git as a defense against accidental commits; `.env.example` contains only a placeholder.
+The repository does not contain API secrets. Local `.env` variants, private keys, downloaded credential JSON files, and integration token files are ignored by Git as a defense against accidental commits.
 
-Do not put secrets in variables prefixed with `VITE_`: Vite replaces those values during compilation and exposes them in the frontend bundle. `GEMINI_API_KEY` is read only by the Rust backend, sent in an authentication header, and never returned through a Tauri command. Keep `.env` local and rotate the key immediately if it is ever exposed.
+Do not put secrets in variables prefixed with `VITE_`: Vite replaces those values during compilation and exposes them in the frontend bundle.
 
 ## Warnings and limitations
 
@@ -243,7 +240,7 @@ Use this project at your own risk and review the source before trusting it with 
 - **The app is Windows-first.** Most native commands explicitly support Windows only. Other operating systems can render the frontend but do not have feature parity.
 - **The build is not code-signed.** Windows may warn before running a downloaded or redistributed build. Never bypass a warning for a binary you did not build yourself or obtain from a source you trust.
 - **OAuth grants write capabilities.** Spotify can control playback and Google Calendar can create events after authorization. Confirm the account and permissions shown on each consent screen.
-- **AI drafts can be wrong.** Relative dates, names, durations, and other details can be misunderstood even with structured output and backend validation. Quick Schedule deliberately requires review before Calendar submission; confirm every draft, especially any item marked **Check details**.
+- **Phone Mode changes the computer remotely.** A paired phone can immediately change volume and brightness, control playback, launch allowlisted shortcuts and app groups, rearrange visible application windows, and create reviewed Google Calendar events. Keep it off on untrusted networks and end the session when finished.
 - **External services can change.** Spotify and Google can alter APIs, account requirements, quotas, scopes, or verification rules independently of this project.
 - **No automatic updates or support guarantee.** Pull, inspect, and rebuild newer revisions manually.
 - **No warranty.** The MIT License provides this software “as is,” without guarantees of correctness, fitness, security, or continued compatibility.
@@ -258,7 +255,10 @@ Use this project at your own risk and review the source before trusting it with 
 │   └── lib/                     Frontend runtime helpers
 ├── src-tauri/
 │   ├── src/lib.rs               Native Windows commands and Tauri setup
-│   ├── src/gemini_schedule.rs   Gemini schema, system prompt, and draft validation
+│   ├── src/phone_mode.rs         Paired LAN server and allowlisted phone-control API
+│   ├── src/phone_mode_ui.html    Embedded minimalist mobile remote
+│   ├── src/phone_mode_ui.css     Mirrored theme palettes and touch layouts
+│   ├── src/phone_mode_ui.js      Mobile controls, window editor, and manual scheduler
 │   ├── src/spotify.rs           Spotify OAuth and Web API integration
 │   ├── src/google_calendar.rs   Google OAuth and Calendar integration
 │   ├── capabilities/            Tauri permission configuration
