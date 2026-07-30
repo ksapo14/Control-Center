@@ -397,8 +397,10 @@ export function Planning() {
       <TactileButton
         ref={triggerRef}
         onClick={() => setOpen(true)}
-        className="h-9 px-2.5 sm:px-3"
+        className="grid size-11 place-items-center p-0"
         aria-haspopup="dialog"
+        aria-label="Open Planning"
+        title="Planning"
         data-shortcut-combo="Control+Alt+KeyP"
         data-shortcut-id="control:planning"
         data-shortcut-label="Open Planning"
@@ -407,12 +409,7 @@ export function Planning() {
         data-shortcut-order="1"
         data-control-action="open-planning"
       >
-        <span className="flex items-center gap-2">
-          <NotebookPen size={15} strokeWidth={1.7} className="text-signal-300" />
-          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-300 xl:inline">
-            Planning
-          </span>
-        </span>
+        <NotebookPen size={15} strokeWidth={1.7} className="text-signal-300" />
       </TactileButton>
 
       <AnimatePresence>

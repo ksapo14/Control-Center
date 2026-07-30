@@ -43,6 +43,68 @@
 
       <section id="remoteView" class="app-view active" role="tabpanel" aria-labelledby="remoteTab">
         <section class="section">
+          <div class="section-head"><h2 class="section-title">Open a website</h2><span class="section-note">Opens on the computer</span></div>
+          <form id="websiteForm" class="website-row">
+            <label class="sr-only" for="websiteAddress">Temporary website address</label>
+            <input id="websiteAddress" class="field-input" type="text" inputmode="url" maxlength="2048" autocomplete="url" autocapitalize="none" spellcheck="false" placeholder="example.com" aria-describedby="websiteHint">
+            <button id="websiteButton" class="primary" type="submit">Open</button>
+          </form>
+          <p id="websiteHint" class="control-hint">You can omit https://. Only web addresses are accepted.</p>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">Mouse remote</h2><span class="section-note">Touch surface</span></div>
+          <div class="trackpad-shell">
+            <div id="trackpad" class="trackpad" role="application" tabindex="0" aria-label="Computer trackpad. Drag one finger to move, tap to click, or drag two fingers to scroll.">
+              <div class="trackpad-copy" aria-hidden="true">
+                <span class="trackpad-mark"></span>
+                <strong>Move pointer</strong>
+                <small>Tap to click · two fingers to scroll</small>
+              </div>
+            </div>
+            <div class="mouse-button-row" aria-label="Mouse buttons">
+              <button type="button" data-mouse-click="left">Left click</button>
+              <button type="button" data-mouse-click="double">Double click</button>
+              <button type="button" data-mouse-click="right">Right click</button>
+            </div>
+            <div class="scroll-button-row" aria-label="Scroll controls">
+              <button type="button" data-scroll-steps="3">Scroll up</button>
+              <button type="button" data-scroll-steps="-3">Scroll down</button>
+            </div>
+          </div>
+          <button id="keyboardToggle" class="keyboard-toggle" type="button" aria-expanded="false" aria-controls="desktopKeyboard">
+            <span class="keyboard-toggle-mark" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>
+            <span><strong>Open keyboard</strong><small>Type into the active app on your computer</small></span>
+          </button>
+          <form id="desktopKeyboard" class="keyboard-panel" hidden>
+            <label for="desktopKeyboardText">Text to type</label>
+            <textarea id="desktopKeyboardText" maxlength="2000" rows="3" enterkeyhint="send" autocapitalize="sentences" placeholder="Type here, then send to the computer"></textarea>
+            <div class="keyboard-key-row" aria-label="Computer keyboard keys">
+              <button type="button" data-keyboard-key="backspace">Backspace</button>
+              <button type="button" data-keyboard-key="tab">Tab</button>
+              <button type="button" data-keyboard-key="escape">Esc</button>
+              <button type="button" data-keyboard-key="enter">Enter</button>
+            </div>
+            <button id="keyboardSend" class="primary keyboard-send" type="submit">Type on computer</button>
+            <p class="control-hint">Tap the text box to open your phone keyboard. Text goes to whichever computer app is active.</p>
+          </form>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">Browser shortcuts</h2><span class="section-note">Sent to the active app</span></div>
+          <div class="shortcut-grid">
+            <button type="button" data-shortcut="new_tab"><kbd>Ctrl T</kbd><span>New tab</span></button>
+            <button type="button" data-shortcut="close_tab"><kbd>Ctrl W</kbd><span>Close tab</span></button>
+            <button type="button" data-shortcut="reopen_tab"><kbd>Ctrl Shift T</kbd><span>Reopen tab</span></button>
+            <button type="button" data-shortcut="address_bar"><kbd>Ctrl L</kbd><span>Address bar</span></button>
+            <button type="button" data-shortcut="back"><kbd>Alt Left</kbd><span>Back</span></button>
+            <button type="button" data-shortcut="forward"><kbd>Alt Right</kbd><span>Forward</span></button>
+            <button type="button" data-shortcut="refresh"><kbd>Ctrl R</kbd><span>Refresh</span></button>
+            <button type="button" data-shortcut="escape"><kbd>Esc</kbd><span>Dismiss</span></button>
+          </div>
+        </section>
+
+        <section class="section">
           <div class="section-head"><h2 class="section-title">System</h2><span class="section-note">Changes apply immediately</span></div>
           <div class="panel range-panel">
             <div class="range-row">
@@ -54,6 +116,16 @@
               <input id="brightness" type="range" min="0" max="100" value="50" aria-label="Display brightness">
             </div>
           </div>
+        </section>
+
+        <section class="section">
+          <div class="section-head"><h2 class="section-title">Voice shortcuts</h2><span class="section-note">Uses the computer microphone</span></div>
+          <button class="speech-control" type="button" data-action="start_speech">
+            <span class="speech-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4Zm7-4a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.92V21H8a1 1 0 1 0 0 2h8a1 1 0 1 0 0-2h-3v-3.08A7 7 0 0 0 19 11Z"/></svg>
+            </span>
+            <span><strong>Start voice shortcuts</strong><small>Listen on the computer · say “speech off” to stop</small></span>
+          </button>
         </section>
 
         <section class="section">

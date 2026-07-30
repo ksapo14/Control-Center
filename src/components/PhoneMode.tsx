@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
 import { restoreProductivityData } from "../lib/productivity";
 import { TactileButton } from "./TactileButton";
+import { useProcessingOverlay } from "./LoadingOverlay";
 import { useControlCenter } from "./ControlCenter";
 import { useDashboardCustomization } from "./DashboardCustomization";
 
@@ -22,7 +23,7 @@ type PhoneModeContext = {
 };
 
 type PhoneControlAction = {
-  type: "launcher" | "group" | "scene" | "capture" | "open_workspace";
+  type: "launcher" | "group" | "scene" | "capture" | "open_workspace" | "speech";
   value?: string | null;
 };
 
@@ -73,6 +74,7 @@ export function PhoneMode() {
   const [copied, setCopied] = useState<"url" | "code" | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  useProcessingOverlay(busy, session ? "Stopping Phone Mode" : "Starting Phone Mode");
 
   const buildContext = useCallback((): PhoneModeContext => ({
     launchers: collectLaunchers(),
@@ -159,6 +161,10 @@ export function PhoneMode() {
         clickDashboardControl("[data-control-action='open-apps']");
         return;
       }
+      if (payload.type === "speech") {
+        window.dispatchEvent(new Event("control-panel:start-speech-mode"));
+        return;
+      }
       if (payload.type === "scene" && payload.value) {
         window.dispatchEvent(new CustomEvent("control-panel:productivity-scene", { detail: { sceneId: payload.value } }));
         return;
@@ -206,9 +212,10 @@ export function PhoneMode() {
         ref={triggerRef}
         onClick={() => session ? setOpen(true) : void start()}
         selected={Boolean(session)}
-        className="h-9 px-2.5 sm:px-3"
+        className="grid size-11 shrink-0 place-items-center p-0"
         aria-haspopup="dialog"
         aria-label="Open Phone Mode"
+        title="Phone Mode"
         data-shortcut-combo="Control+Alt+Shift+KeyM"
         data-shortcut-id="control:phone-mode"
         data-shortcut-label="Open Phone Mode"
@@ -216,12 +223,9 @@ export function PhoneMode() {
         data-shortcut-group="Control panel"
         data-shortcut-order="0"
       >
-        <span className="flex items-center gap-2 text-signal-300">
+        <span className="text-signal-300">
           <PhoneGlyph />
-          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-300 2xl:inline">
-            Phone
-          </span>
-          {session ? <span className="size-1.5 rounded-full bg-emerald-300" aria-hidden="true" /> : null}
+          {session ? <span className="absolute bottom-2 right-2 size-1.5 rounded-full bg-emerald-300" aria-hidden="true" /> : null}
         </span>
       </TactileButton>
 

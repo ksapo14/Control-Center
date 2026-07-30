@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
+import { useProcessingOverlay } from "./LoadingOverlay";
 import { TactileButton } from "./TactileButton";
 import { WidgetFrame } from "./WidgetFrame";
 
@@ -118,6 +119,7 @@ export function AppLauncherWidget() {
   const [launcherKind, setLauncherKind] = useState<"web" | "executable">("web");
   const [launcherName, setLauncherName] = useState("");
   const [launcherTarget, setLauncherTarget] = useState("");
+  useProcessingOverlay(busyTarget !== null, `Opening ${busyTarget ?? "destination"}`);
 
   useEffect(() => {
     try {

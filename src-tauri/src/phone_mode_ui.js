@@ -14,6 +14,14 @@
   const pairForm = document.getElementById("pairForm");
   const pairCode = document.getElementById("pairCode");
   const pairButton = document.getElementById("pairButton");
+  const websiteForm = document.getElementById("websiteForm");
+  const websiteAddress = document.getElementById("websiteAddress");
+  const websiteButton = document.getElementById("websiteButton");
+  const trackpad = document.getElementById("trackpad");
+  const keyboardToggle = document.getElementById("keyboardToggle");
+  const desktopKeyboard = document.getElementById("desktopKeyboard");
+  const desktopKeyboardText = document.getElementById("desktopKeyboardText");
+  const keyboardSend = document.getElementById("keyboardSend");
   const phoneCaptureForm = document.getElementById("phoneCaptureForm");
   const phoneCaptureText = document.getElementById("phoneCaptureText");
   const controls = document.getElementById("controls");
@@ -67,6 +75,17 @@
   let calendarBusy = false;
   let manualRowSequence = 0;
   let manualRows = [];
+  let pointerFrame = null;
+  let pointerSendPending = false;
+  let queuedPointerX = 0;
+  let queuedPointerY = 0;
+  let scrollSendPending = false;
+  let queuedScrollPixels = 0;
+  const activeTrackpadPointers = new Map();
+  let trackpadGestureStarted = 0;
+  let trackpadGestureDistance = 0;
+  let trackpadGestureMoved = false;
+  let lastTrackpadCenter = null;
 
   const clamp = (value, minimum, maximum) => Math.min(Math.max(value, minimum), maximum);
   const selectedWindow = () => workspace?.windows.find((item) => item.handle === selectedHandle) || null;
@@ -127,16 +146,118 @@
     }
   }
 
-  async function action(type, value) {
+  async function action(type, value, options = {}) {
     try {
       const body = value === undefined ? { type } : { type, value };
       const result = await request("/api/action", { method: "POST", body: JSON.stringify(body) });
-      setStatus(result.message || "Done");
+      if (!options.quiet) setStatus(result.message || "Done");
       return true;
     } catch (error) {
       setStatus(error.message || String(error), true);
       return false;
     }
+  }
+
+  function trackpadCenter() {
+    if (!activeTrackpadPointers.size) return null;
+    const points = [...activeTrackpadPointers.values()];
+    return {
+      x: points.reduce((total, point) => total + point.x, 0) / points.length,
+      y: points.reduce((total, point) => total + point.y, 0) / points.length,
+    };
+  }
+
+  function schedulePointerFlush() {
+    if (pointerFrame !== null || pointerSendPending) return;
+    pointerFrame = window.requestAnimationFrame(() => {
+      pointerFrame = null;
+      void flushPointerMove();
+    });
+  }
+
+  async function flushPointerMove() {
+    if (pointerSendPending) return;
+    const x = clamp(Math.round(queuedPointerX), -500, 500);
+    const y = clamp(Math.round(queuedPointerY), -500, 500);
+    if (x === 0 && y === 0) return;
+    queuedPointerX -= x;
+    queuedPointerY -= y;
+    pointerSendPending = true;
+    await action("mouse_move", { x, y }, { quiet: true });
+    pointerSendPending = false;
+    if (Math.abs(queuedPointerX) >= .5 || Math.abs(queuedPointerY) >= .5) schedulePointerFlush();
+  }
+
+  function queuePointerMove(deltaX, deltaY) {
+    const acceleration = Math.min(2.2, 1.15 + Math.hypot(deltaX, deltaY) / 22);
+    queuedPointerX += deltaX * acceleration;
+    queuedPointerY += deltaY * acceleration;
+    schedulePointerFlush();
+  }
+
+  async function flushTrackpadScroll() {
+    if (scrollSendPending || Math.abs(queuedScrollPixels) < 16) return;
+    const steps = clamp(Math.trunc(queuedScrollPixels / 16), -12, 12);
+    if (!steps) return;
+    queuedScrollPixels -= steps * 16;
+    scrollSendPending = true;
+    await action("mouse_scroll", steps, { quiet: true });
+    scrollSendPending = false;
+    if (Math.abs(queuedScrollPixels) >= 16) void flushTrackpadScroll();
+  }
+
+  function queueTrackpadScroll(deltaY) {
+    queuedScrollPixels += deltaY;
+    void flushTrackpadScroll();
+  }
+
+  function beginTrackpadGesture(event) {
+    event.preventDefault();
+    trackpad.setPointerCapture?.(event.pointerId);
+    activeTrackpadPointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    trackpad.classList.add("active");
+    if (activeTrackpadPointers.size === 1) {
+      trackpadGestureStarted = performance.now();
+      trackpadGestureDistance = 0;
+      trackpadGestureMoved = false;
+    } else {
+      trackpadGestureMoved = true;
+    }
+    lastTrackpadCenter = trackpadCenter();
+  }
+
+  function moveTrackpadGesture(event) {
+    const previous = activeTrackpadPointers.get(event.pointerId);
+    if (!previous) return;
+    event.preventDefault();
+    const current = { x: event.clientX, y: event.clientY };
+    activeTrackpadPointers.set(event.pointerId, current);
+    if (activeTrackpadPointers.size === 1) {
+      const deltaX = current.x - previous.x;
+      const deltaY = current.y - previous.y;
+      trackpadGestureDistance += Math.hypot(deltaX, deltaY);
+      if (trackpadGestureDistance > 8) trackpadGestureMoved = true;
+      queuePointerMove(deltaX, deltaY);
+    } else {
+      const center = trackpadCenter();
+      if (center && lastTrackpadCenter) queueTrackpadScroll(center.y - lastTrackpadCenter.y);
+      lastTrackpadCenter = center;
+      trackpadGestureMoved = true;
+    }
+  }
+
+  function endTrackpadGesture(event, cancelled = false) {
+    if (!activeTrackpadPointers.has(event.pointerId)) return;
+    event.preventDefault();
+    const wasOnlyPointer = activeTrackpadPointers.size === 1;
+    const shouldClick = !cancelled
+      && wasOnlyPointer
+      && !trackpadGestureMoved
+      && performance.now() - trackpadGestureStarted < 320;
+    activeTrackpadPointers.delete(event.pointerId);
+    lastTrackpadCenter = trackpadCenter();
+    if (!activeTrackpadPointers.size) trackpad.classList.remove("active");
+    if (shouldClick) void action("mouse_click", "left", { quiet: true });
   }
 
   function switchView(viewId) {
@@ -666,6 +787,50 @@
   });
 
   pairCode.addEventListener("input", () => { pairCode.value = pairCode.value.replace(/\D/g, "").slice(0, 6); });
+  websiteForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const address = websiteAddress.value.trim();
+    if (!address) {
+      setStatus("Enter the website you want to open", true);
+      websiteAddress.focus();
+      return;
+    }
+    websiteButton.disabled = true;
+    if (await action("open_website", address)) websiteAddress.value = "";
+    websiteButton.disabled = false;
+  });
+  trackpad.addEventListener("pointerdown", beginTrackpadGesture);
+  trackpad.addEventListener("pointermove", moveTrackpadGesture);
+  trackpad.addEventListener("pointerup", (event) => endTrackpadGesture(event));
+  trackpad.addEventListener("pointercancel", (event) => endTrackpadGesture(event, true));
+  trackpad.addEventListener("contextmenu", (event) => event.preventDefault());
+  trackpad.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    void action("mouse_click", "left");
+  });
+  keyboardToggle.addEventListener("click", () => {
+    const opening = desktopKeyboard.hidden;
+    desktopKeyboard.hidden = !opening;
+    keyboardToggle.setAttribute("aria-expanded", String(opening));
+    keyboardToggle.querySelector("strong").textContent = opening ? "Close keyboard" : "Open keyboard";
+    if (opening) desktopKeyboardText.focus();
+  });
+  desktopKeyboard.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!desktopKeyboardText.value) {
+      desktopKeyboardText.focus();
+      return;
+    }
+    keyboardSend.disabled = true;
+    if (await action("type_text", desktopKeyboardText.value)) desktopKeyboardText.value = "";
+    keyboardSend.disabled = false;
+    desktopKeyboardText.focus();
+  });
+  document.querySelectorAll("[data-keyboard-key]").forEach((button) => button.addEventListener("click", () => action("keyboard_key", button.dataset.keyboardKey)));
+  document.querySelectorAll("[data-mouse-click]").forEach((button) => button.addEventListener("click", () => action("mouse_click", button.dataset.mouseClick)));
+  document.querySelectorAll("[data-scroll-steps]").forEach((button) => button.addEventListener("click", () => action("mouse_scroll", Number(button.dataset.scrollSteps))));
+  document.querySelectorAll("[data-shortcut]").forEach((button) => button.addEventListener("click", () => action("shortcut", button.dataset.shortcut)));
   phoneCaptureForm.addEventListener("submit", async (event) => {
     event.preventDefault();
     const text = phoneCaptureText.value.trim();

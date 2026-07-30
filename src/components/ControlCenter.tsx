@@ -36,6 +36,12 @@ import {
   type ReactNode,
 } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
+import {
+  builtInSpeechPhraseOwner,
+  normalizeSpeechPhrase,
+  renderedSpeechPhraseOwner,
+  validateAutomationSpeechPhrase,
+} from "../lib/speechCommands";
 import { TactileButton } from "./TactileButton";
 import { useDashboardCustomization, type DashboardTheme, type WidgetId } from "./DashboardCustomization";
 
@@ -100,6 +106,7 @@ export type AutomationRule = {
   batteryLevel: number;
   appName: string;
   appState: "opened" | "closed";
+  speechPhrase: string;
   actions: AutomationAction[];
 };
 
@@ -108,7 +115,7 @@ type AutomationRun = {
   ruleId: string;
   ruleName: string;
   startedAt: string;
-  kind: "trigger" | "manual" | "test" | "undo";
+  kind: "trigger" | "speech" | "manual" | "test" | "undo";
   status: "success" | "partial" | "skipped" | "tested";
   summary: string;
 };
@@ -210,6 +217,10 @@ function normalizeAutomationRule(candidate: StoredAutomationRule): AutomationRul
       && action.type in actionLabels,
     )).map((action) => ({ ...action, groupId: action.groupId ?? null, value: String(action.value ?? "") }))
     : legacyAction ? [legacyAction] : [];
+  const candidateSpeechPhrase = typeof candidate.speechPhrase === "string" ? candidate.speechPhrase : "";
+  const speechPhrase = validateAutomationSpeechPhrase(candidateSpeechPhrase) === null
+    ? normalizeSpeechPhrase(candidateSpeechPhrase)
+    : "";
   return {
     id: candidate.id,
     name: candidate.name.slice(0, 48),
@@ -222,6 +233,7 @@ function normalizeAutomationRule(candidate: StoredAutomationRule): AutomationRul
     batteryLevel: typeof candidate.batteryLevel === "number" ? Math.min(100, Math.max(1, candidate.batteryLevel)) : 20,
     appName: typeof candidate.appName === "string" ? candidate.appName.slice(0, 80) : "",
     appState: candidate.appState === "closed" ? "closed" : "opened",
+    speechPhrase,
     actions,
   };
 }
@@ -234,10 +246,11 @@ function automationActionDetail(action: AutomationAction, groups: AppGroup[]) {
 }
 
 function automationTriggerDetail(rule: AutomationRule) {
-  if (rule.trigger === "time") return `${rule.time} on ${rule.days.length === 7 ? "every day" : rule.days.map((day) => weekdayLabels[day]).join(", ")}`;
-  if (rule.trigger === "battery") return rule.batteryMode === "charging" ? "when charging starts" : `${rule.batteryMode} ${rule.batteryLevel}%`;
-  if (rule.trigger === "app") return `${rule.appName || "application"} ${rule.appState}`;
-  return triggerLabels[rule.trigger];
+  let detail = triggerLabels[rule.trigger];
+  if (rule.trigger === "time") detail = `${rule.time} on ${rule.days.length === 7 ? "every day" : rule.days.map((day) => weekdayLabels[day]).join(", ")}`;
+  if (rule.trigger === "battery") detail = rule.batteryMode === "charging" ? "when charging starts" : `${rule.batteryMode} ${rule.batteryLevel}%`;
+  if (rule.trigger === "app") detail = `${rule.appName || "application"} ${rule.appState}`;
+  return rule.speechPhrase ? `${detail} · say “${rule.speechPhrase}”` : detail;
 }
 
 /**
@@ -427,12 +440,12 @@ export function ControlCenterProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const runAutomation = useCallback(async (rule: AutomationRule, kind: AutomationRun["kind"] = "trigger") => {
-    if (kind === "trigger" && !rule.enabled) return;
+    if ((kind === "trigger" || kind === "speech") && !rule.enabled) return;
     const now = new Date();
     const focusMatches = rule.focusRequirement === "any"
       || (rule.focusRequirement === "enabled" && focusEnabled)
       || (rule.focusRequirement === "disabled" && !focusEnabled);
-    const dayMatches = rule.trigger !== "time" || rule.days.includes(now.getDay());
+    const dayMatches = kind !== "trigger" || rule.trigger !== "time" || rule.days.includes(now.getDay());
 
     if (kind !== "test" && (!focusMatches || !dayMatches)) {
       const summary = !dayMatches ? "Skipped because today is outside its schedule." : "Skipped because the Focus Mode condition was not met.";
@@ -705,6 +718,7 @@ export function ControlCenterControls() {
   const [automationBatteryLevel, setAutomationBatteryLevel] = useState(20);
   const [automationAppName, setAutomationAppName] = useState("");
   const [automationAppState, setAutomationAppState] = useState<AutomationRule["appState"]>("opened");
+  const [automationSpeechPhrase, setAutomationSpeechPhrase] = useState("");
   const [automationActions, setAutomationActions] = useState<AutomationAction[]>([]);
   const [nextAutomationAction, setNextAutomationAction] = useState<AutomationAction>(() => createAutomationAction());
   const [resetArmed, setResetArmed] = useState(false);
@@ -714,6 +728,17 @@ export function ControlCenterControls() {
   const dialogRef = useRef<HTMLDivElement>(null);
   const importRef = useRef<HTMLInputElement>(null);
   const unreadCount = notifications.filter((notification) => !notification.read).length;
+  const automationSpeechPhraseError = useMemo(() => {
+    const formatError = validateAutomationSpeechPhrase(automationSpeechPhrase);
+    if (formatError || !automationSpeechPhrase.trim()) return formatError;
+    const phrase = normalizeSpeechPhrase(automationSpeechPhrase);
+    const builtInOwner = builtInSpeechPhraseOwner(phrase) ?? renderedSpeechPhraseOwner(phrase);
+    if (builtInOwner) return `Already used by ${builtInOwner}.`;
+    const group = appGroups.find((candidate) => normalizeSpeechPhrase(`launch ${candidate.name}`) === phrase);
+    if (group) return `Already used by the ${group.name} app group.`;
+    const rule = automationRules.find((candidate) => candidate.id !== editingAutomationId && candidate.speechPhrase === phrase);
+    return rule ? `Already used by the ${rule.name} routine.` : null;
+  }, [appGroups, automationRules, automationSpeechPhrase, editingAutomationId]);
 
   /** Opens the requested hub section with freshly scanned launcher options. */
   const showHub = (nextSection: HubSection) => {
@@ -785,6 +810,7 @@ export function ControlCenterControls() {
     setAutomationBatteryLevel(20);
     setAutomationAppName("");
     setAutomationAppState("opened");
+    setAutomationSpeechPhrase("");
     setAutomationActions([]);
     setNextAutomationAction(createAutomationAction());
   };
@@ -827,13 +853,14 @@ export function ControlCenterControls() {
     setAutomationBatteryLevel(rule.batteryLevel);
     setAutomationAppName(rule.appName);
     setAutomationAppState(rule.appState);
+    setAutomationSpeechPhrase(rule.speechPhrase);
     setAutomationActions(rule.actions.map((action) => ({ ...action })));
   };
 
   /** Creates or updates a routine using the active builder fields. */
   const saveAutomation = () => {
     const name = automationName.trim();
-    if (!name || automationActions.length === 0 || (automationTrigger === "app" && !automationAppName.trim()) || (automationTrigger === "time" && automationDays.length === 0)) return;
+    if (!name || automationActions.length === 0 || automationSpeechPhraseError || (automationTrigger === "app" && !automationAppName.trim()) || (automationTrigger === "time" && automationDays.length === 0)) return;
     const rule: AutomationRule = {
       id: editingAutomationId ?? crypto.randomUUID(),
       name: name.slice(0, 48),
@@ -846,6 +873,7 @@ export function ControlCenterControls() {
       batteryLevel: automationBatteryLevel,
       appName: automationAppName.trim().slice(0, 80),
       appState: automationAppState,
+      speechPhrase: normalizeSpeechPhrase(automationSpeechPhrase),
       actions: automationActions,
     };
     setAutomationRules(editingAutomationId
@@ -925,11 +953,20 @@ export function ControlCenterControls() {
         className="relative h-11 px-3"
         aria-haspopup="dialog"
         aria-label="Open control center"
+        data-speech-id="control:center"
+        data-speech-label="Open control center"
+        data-speech-phrase="control center"
         title="Groups, automations, notifications, and settings"
       >
         <Sparkles size={17} className="text-signal-300" />
         {unreadCount > 0 ? <span className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full bg-red-500 px-1 text-[8px] font-bold text-white">{Math.min(unreadCount, 9)}</span> : null}
       </TactileButton>
+
+      <div className="hidden" aria-hidden="true">
+        {sectionButtons.map(({ id, label }) => (
+          <button key={id} type="button" tabIndex={-1} data-speech-id={`control:${id === "groups" ? "center" : id}`} data-speech-label={`Open ${label}`} data-speech-phrase={id === "groups" ? "control center" : id} onClick={() => showHub(id)} />
+        ))}
+      </div>
 
       <AnimatePresence>
         {open && (
@@ -1066,6 +1103,12 @@ export function ControlCenterControls() {
                               {automationTrigger === "battery" ? <><label><span className="schedule-label">Battery event</span><select value={automationBatteryMode} onChange={(event) => setAutomationBatteryMode(event.target.value as AutomationRule["batteryMode"])} className="schedule-input"><option value="below">Drops to or below</option><option value="above">Rises to or above</option><option value="charging">Starts charging</option></select></label>{automationBatteryMode === "charging" ? <div /> : <label><span className="schedule-label">Level</span><input type="number" min={1} max={100} value={automationBatteryLevel} onChange={(event) => setAutomationBatteryLevel(Math.min(100, Math.max(1, Number(event.target.value))))} className="schedule-input" /></label>}</> : null}
 
                               {automationTrigger === "app" ? <><label><span className="schedule-label">Application name</span><input value={automationAppName} onChange={(event) => setAutomationAppName(event.target.value)} placeholder="Chrome" className="schedule-input" /></label><label><span className="schedule-label">Change</span><select value={automationAppState} onChange={(event) => setAutomationAppState(event.target.value as AutomationRule["appState"])} className="schedule-input"><option value="opened">Application opens</option><option value="closed">Application closes</option></select></label></> : null}
+
+                              <label className="sm:col-span-2">
+                                <span className="schedule-label">Optional voice phrase</span>
+                                <input value={automationSpeechPhrase} onChange={(event) => setAutomationSpeechPhrase(event.target.value)} placeholder="begin deep work" maxLength={64} className="schedule-input" aria-invalid={Boolean(automationSpeechPhraseError)} aria-describedby="automation-speech-help" />
+                                <span id="automation-speech-help" className={`mt-1.5 block text-[10px] ${automationSpeechPhraseError ? "text-red-300" : "text-stone-700"}`}>{automationSpeechPhraseError ?? "Use a unique phrase of two to eight words. It can run this routine in addition to its normal trigger."}</span>
+                              </label>
                             </div>
 
                             <div className="mt-5">
@@ -1079,7 +1122,7 @@ export function ControlCenterControls() {
                               </div>
                             </div>
 
-                            <TactileButton onClick={saveAutomation} disabled={!automationName.trim() || automationActions.length === 0 || (automationTrigger === "app" && !automationAppName.trim()) || (automationTrigger === "time" && automationDays.length === 0)} className="mt-4 h-11 w-full"><span className="flex items-center justify-center gap-2 text-xs font-semibold">{editingAutomationId ? <Save size={15} /> : <Workflow size={15} />} {editingAutomationId ? "Save routine" : "Create routine"}</span></TactileButton>
+                            <TactileButton onClick={saveAutomation} disabled={!automationName.trim() || automationActions.length === 0 || Boolean(automationSpeechPhraseError) || (automationTrigger === "app" && !automationAppName.trim()) || (automationTrigger === "time" && automationDays.length === 0)} className="mt-4 h-11 w-full"><span className="flex items-center justify-center gap-2 text-xs font-semibold">{editingAutomationId ? <Save size={15} /> : <Workflow size={15} />} {editingAutomationId ? "Save routine" : "Create routine"}</span></TactileButton>
                           </div>
                         </>
                       ) : (

@@ -66,8 +66,8 @@ export function BatteryStatus() {
 
   return (
     <div
-      className="flex h-8 items-center gap-2 rounded-[9px] border border-white/[0.055] bg-[#090a09] px-2.5 text-stone-400 shadow-well"
-      title={battery.charging ? "Battery charging" : "Battery level"}
+      className="flex h-11 shrink-0 items-center gap-2 rounded-[10px] border border-white/[0.055] bg-[#090a09] px-2.5 text-stone-400 shadow-well"
+      title={`${battery.charging ? "Charging · " : ""}${label}`}
       aria-label={`${battery.charging ? "Charging, " : ""}${label}`}
     >
       <span className={battery.charging ? "text-signal-300" : "text-stone-500"}>

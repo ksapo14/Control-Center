@@ -277,8 +277,10 @@ export function TaskHabitTracker() {
       <TactileButton
         ref={triggerRef}
         onClick={() => setOpen(true)}
-        className="h-9 px-2.5 sm:px-3"
+        className="grid size-11 place-items-center p-0"
         aria-haspopup="dialog"
+        aria-label="Open Tasks and Habits"
+        title="Tasks and Habits"
         data-shortcut-combo="Control+Alt+KeyH"
         data-shortcut-id="control:tasks-habits"
         data-shortcut-label="Open Tasks and Habits"
@@ -286,10 +288,7 @@ export function TaskHabitTracker() {
         data-shortcut-group="Control panel"
         data-shortcut-order="2"
       >
-        <span className="flex items-center gap-2">
-          <ChecklistMark size={15} />
-          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-300 lg:inline">Tasks</span>
-        </span>
+        <ChecklistMark size={15} />
       </TactileButton>
 
       <AnimatePresence>

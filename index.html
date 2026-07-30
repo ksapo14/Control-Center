@@ -6,8 +6,24 @@
     <meta name="theme-color" content="#171918" />
     <meta name="color-scheme" content="dark" />
     <title>Control Panel</title>
+    <style>
+      html, body { min-height: 100%; margin: 0; background: #060706; }
+      #app-startup-splash { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; background: #060706; color: #e7e5e1; opacity: 1; transition: opacity 260ms ease, filter 260ms ease, visibility 260ms step-end; }
+      #app-startup-splash.is-leaving { visibility: hidden; opacity: 0; filter: blur(3px); }
+      .app-startup-lockup { display: grid; justify-items: center; gap: 14px; }
+      .app-startup-ring { width: 34px; height: 34px; border: 2px solid rgb(255 255 255 / .12); border-top-color: #f2c772; border-radius: 50%; animation: app-startup-spin 760ms linear infinite; }
+      .app-startup-label { color: rgb(231 229 225 / .72); font: 600 11px/1 "Aptos", "Segoe UI Variable Text", "Segoe UI", sans-serif; letter-spacing: .12em; text-transform: uppercase; }
+      @keyframes app-startup-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { #app-startup-splash { transition-duration: 80ms; } .app-startup-ring { animation: none; border-color: rgb(242 199 114 / .75); } }
+    </style>
   </head>
   <body>
+    <div id="app-startup-splash" role="status" aria-label="Loading Control Panel">
+      <div class="app-startup-lockup" aria-hidden="true">
+        <span class="app-startup-ring"></span>
+        <span class="app-startup-label">Control Panel</span>
+      </div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

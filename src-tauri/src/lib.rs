@@ -4,6 +4,7 @@ use tauri::Manager;
 
 mod google_calendar;
 mod phone_mode;
+mod speech_mode;
 mod spotify;
 
 fn command_error(context: &str, error: impl std::fmt::Display) -> String {
@@ -692,6 +693,93 @@ fn get_bluetooth_device_status(device_name: String) -> Result<bool, String> {
 
     #[cfg(not(target_os = "windows"))]
     Err("Bluetooth status is currently configured for Windows".into())
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioOutputDeviceInfo {
+    name: String,
+    is_default: bool,
+    form_factor: String,
+}
+
+#[tauri::command]
+/// Lists active Windows render endpoints so the mixer can identify computer speakers and connected headphones.
+fn list_audio_output_devices() -> Result<Vec<AudioOutputDeviceInfo>, String> {
+    #[cfg(target_os = "windows")]
+    unsafe {
+        use windows::Win32::{
+            Devices::FunctionDiscovery::PKEY_Device_FriendlyName,
+            Media::Audio::{
+                eConsole, eRender, Headphones, Headset, IMMDeviceEnumerator, MMDeviceEnumerator,
+                PKEY_AudioEndpoint_FormFactor, Speakers, DEVICE_STATE_ACTIVE,
+            },
+            System::Com::{CoCreateInstance, CLSCTX_ALL, STGM_READ},
+        };
+
+        let _com = initialize_com()?;
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)
+                .map_err(|error| command_error("Windows audio devices are unavailable", error))?;
+        let default_name = enumerator
+            .GetDefaultAudioEndpoint(eRender, eConsole)
+            .and_then(|device| device.OpenPropertyStore(STGM_READ))
+            .and_then(|store| store.GetValue(&PKEY_Device_FriendlyName))
+            .map(|value| value.to_string())
+            .unwrap_or_default();
+        let endpoints = enumerator
+            .EnumAudioEndpoints(eRender, DEVICE_STATE_ACTIVE)
+            .map_err(|error| command_error("Could not enumerate active audio outputs", error))?;
+        let endpoint_count = endpoints
+            .GetCount()
+            .map_err(|error| command_error("Could not count active audio outputs", error))?;
+        let mut outputs = Vec::with_capacity(endpoint_count as usize);
+
+        for index in 0..endpoint_count {
+            let endpoint = endpoints
+                .Item(index)
+                .map_err(|error| command_error("Could not inspect an audio output", error))?;
+            let store = endpoint.OpenPropertyStore(STGM_READ).map_err(|error| {
+                command_error("Could not inspect audio output properties", error)
+            })?;
+            let name = store
+                .GetValue(&PKEY_Device_FriendlyName)
+                .map(|value| value.to_string())
+                .unwrap_or_else(|_| format!("Audio output {}", index + 1));
+            let raw_form_factor = store
+                .GetValue(&PKEY_AudioEndpoint_FormFactor)
+                .map(|value| value.Anonymous.Anonymous.Anonymous.uintVal)
+                .unwrap_or_default();
+            let form_factor = if raw_form_factor == Speakers.0 as u32 {
+                "speakers"
+            } else if raw_form_factor == Headphones.0 as u32 {
+                "headphones"
+            } else if raw_form_factor == Headset.0 as u32 {
+                "headset"
+            } else {
+                "other"
+            };
+            outputs.push(AudioOutputDeviceInfo {
+                is_default: name == default_name,
+                name,
+                form_factor: form_factor.into(),
+            });
+        }
+
+        outputs.sort_by_key(|device| {
+            let form_rank = match device.form_factor.as_str() {
+                "speakers" => 0,
+                "headphones" => 1,
+                "headset" => 2,
+                _ => 3,
+            };
+            (!device.is_default, form_rank, device.name.to_lowercase())
+        });
+        Ok(outputs)
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    Err("Audio output discovery is currently configured for Windows".into())
 }
 
 #[cfg(target_os = "windows")]
@@ -2379,6 +2467,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .manage(phone_mode::PhoneModeManager::default())
+        .manage(speech_mode::SpeechModeManager::default())
         .invoke_handler(tauri::generate_handler![
             launch_app,
             launch_chrome_site,
@@ -2387,6 +2476,7 @@ pub fn run() {
             connect_bluetooth_device,
             disconnect_bluetooth_device,
             get_bluetooth_device_status,
+            list_audio_output_devices,
             get_system_volume,
             get_system_audio_bands,
             set_system_volume,
@@ -2411,6 +2501,10 @@ pub fn run() {
             phone_mode::stop_phone_mode,
             phone_mode::get_phone_mode_status,
             phone_mode::update_phone_mode_context,
+            speech_mode::start_speech_mode,
+            speech_mode::update_speech_mode_phrases,
+            speech_mode::stop_speech_mode,
+            speech_mode::get_speech_mode_status,
             spotify::get_spotify_status,
             spotify::configure_spotify,
             spotify::connect_spotify,

@@ -1,6 +1,8 @@
 use rand::{rngs::OsRng, Rng, RngCore};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+#[cfg(target_os = "windows")]
+use std::process::Command;
 use std::{
     collections::HashSet,
     io::Read,
@@ -727,6 +729,67 @@ fn execute_action(
             crate::media_control("next".into())?;
             Ok("Next track")
         }
+        "open_website" => {
+            let website = action_website(&payload)?;
+            open_website(&website)?;
+            Ok("Website opened on the computer")
+        }
+        "mouse_move" => {
+            let (delta_x, delta_y) = action_mouse_delta(&payload)?;
+            send_mouse_move(delta_x, delta_y)?;
+            Ok("Pointer moved")
+        }
+        "mouse_click" => {
+            let button = payload
+                .value
+                .as_ref()
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Choose a mouse button".to_string())?;
+            send_mouse_click(button)?;
+            Ok("Mouse click sent")
+        }
+        "mouse_scroll" => {
+            let steps = payload
+                .value
+                .as_ref()
+                .and_then(Value::as_i64)
+                .filter(|steps| (-12..=12).contains(steps) && *steps != 0)
+                .ok_or_else(|| "Scroll must be between -12 and 12 steps".to_string())?;
+            send_mouse_scroll(steps as i32)?;
+            Ok("Scrolled")
+        }
+        "shortcut" => {
+            let shortcut = payload
+                .value
+                .as_ref()
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Choose a keyboard shortcut".to_string())?;
+            send_shortcut(shortcut)?;
+            Ok("Shortcut sent")
+        }
+        "type_text" => {
+            let text = payload
+                .value
+                .as_ref()
+                .and_then(Value::as_str)
+                .filter(|value| {
+                    !value.is_empty() && value.chars().count() <= 2_000 && !value.contains('\0')
+                })
+                .ok_or_else(|| {
+                    "Keyboard text must be between 1 and 2,000 characters".to_string()
+                })?;
+            send_text_input(text)?;
+            Ok("Text typed on the computer")
+        }
+        "keyboard_key" => {
+            let key = payload
+                .value
+                .as_ref()
+                .and_then(Value::as_str)
+                .ok_or_else(|| "Choose a keyboard key".to_string())?;
+            send_keyboard_key(key)?;
+            Ok("Key sent")
+        }
         "launcher" | "group" | "scene" => {
             let value = payload
                 .value
@@ -791,6 +854,17 @@ fn execute_action(
             let _ = restore_main_window(app);
             Ok("Window workspace opened on the computer")
         }
+        "start_speech" => {
+            app.emit(
+                "phone-control-action",
+                PhoneControlAction {
+                    action_type: "speech".into(),
+                    value: None,
+                },
+            )
+            .map_err(|error| format!("Speech Mode could not be started: {error}"))?;
+            Ok("Voice shortcuts are starting on the computer")
+        }
         "show_desktop" => {
             restore_main_window(app)?;
             Ok("Desktop controls restored")
@@ -803,6 +877,319 @@ fn execute_action(
         }
         _ => Err("That phone action is not allowed".into()),
     }
+}
+
+fn action_website(payload: &ActionRequest) -> Result<String, String> {
+    let value = payload
+        .value
+        .as_ref()
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.chars().count() <= 2_048)
+        .ok_or_else(|| "Enter a web address up to 2,048 characters".to_string())?;
+    let candidate = if value.contains("://") {
+        value.to_string()
+    } else {
+        format!("https://{value}")
+    };
+    let parsed =
+        url::Url::parse(&candidate).map_err(|_| "Enter a valid website address".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err("Only normal http or https website addresses are allowed".into());
+    }
+    Ok(parsed.into())
+}
+
+fn action_mouse_delta(payload: &ActionRequest) -> Result<(i32, i32), String> {
+    let value = payload
+        .value
+        .as_ref()
+        .and_then(Value::as_object)
+        .ok_or_else(|| "Pointer movement is missing its coordinates".to_string())?;
+    let delta_x = value
+        .get("x")
+        .and_then(Value::as_i64)
+        .filter(|value| (-500..=500).contains(value))
+        .ok_or_else(|| "Horizontal pointer movement is out of range".to_string())?;
+    let delta_y = value
+        .get("y")
+        .and_then(Value::as_i64)
+        .filter(|value| (-500..=500).contains(value))
+        .ok_or_else(|| "Vertical pointer movement is out of range".to_string())?;
+    if delta_x == 0 && delta_y == 0 {
+        return Err("Pointer movement cannot be empty".into());
+    }
+    Ok((delta_x as i32, delta_y as i32))
+}
+
+#[cfg(target_os = "windows")]
+fn open_website(website: &str) -> Result<(), String> {
+    let mut command = if let Some(chrome) = crate::chrome_executable() {
+        Command::new(chrome)
+    } else {
+        Command::new("explorer.exe")
+    };
+    command
+        .arg(website)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("Windows could not open the website: {error}"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn open_website(_website: &str) -> Result<(), String> {
+    Err("Website opening is currently configured for Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+fn send_mouse_input(flags: u32, mouse_data: u32, delta_x: i32, delta_y: i32) -> Result<(), String> {
+    use std::mem::size_of;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEINPUT, MOUSE_EVENT_FLAGS,
+    };
+
+    let input = INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx: delta_x,
+                dy: delta_y,
+                mouseData: mouse_data,
+                dwFlags: MOUSE_EVENT_FLAGS(flags),
+                ..Default::default()
+            },
+        },
+    };
+    let sent = unsafe { SendInput(&[input], size_of::<INPUT>() as i32) };
+    if sent != 1 {
+        return Err("Windows did not accept the mouse input".into());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn send_mouse_move(delta_x: i32, delta_y: i32) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::MOUSEEVENTF_MOVE;
+    send_mouse_input(MOUSEEVENTF_MOVE.0, 0, delta_x, delta_y)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn send_mouse_move(_delta_x: i32, _delta_y: i32) -> Result<(), String> {
+    Err("Mouse control is currently configured for Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+fn send_mouse_click(button: &str) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+    };
+
+    let (down, up, count) = match button {
+        "left" => (MOUSEEVENTF_LEFTDOWN.0, MOUSEEVENTF_LEFTUP.0, 1),
+        "double" => (MOUSEEVENTF_LEFTDOWN.0, MOUSEEVENTF_LEFTUP.0, 2),
+        "right" => (MOUSEEVENTF_RIGHTDOWN.0, MOUSEEVENTF_RIGHTUP.0, 1),
+        _ => return Err("That mouse button is not allowed".into()),
+    };
+    for _ in 0..count {
+        send_mouse_input(down, 0, 0, 0)?;
+        send_mouse_input(up, 0, 0, 0)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn send_mouse_click(_button: &str) -> Result<(), String> {
+    Err("Mouse control is currently configured for Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+fn send_mouse_scroll(steps: i32) -> Result<(), String> {
+    use windows::Win32::UI::Input::KeyboardAndMouse::MOUSEEVENTF_WHEEL;
+    const WHEEL_DELTA: i32 = 120;
+    send_mouse_input(
+        MOUSEEVENTF_WHEEL.0,
+        steps.saturating_mul(WHEEL_DELTA) as u32,
+        0,
+        0,
+    )
+}
+
+#[cfg(not(target_os = "windows"))]
+fn send_mouse_scroll(_steps: i32) -> Result<(), String> {
+    Err("Mouse control is currently configured for Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+fn send_shortcut(shortcut: &str) -> Result<(), String> {
+    use std::mem::size_of;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+        VK_CONTROL, VK_ESCAPE, VK_LEFT, VK_MENU, VK_RIGHT, VK_SHIFT,
+    };
+
+    let (modifiers, key): (&[VIRTUAL_KEY], VIRTUAL_KEY) = match shortcut {
+        "new_tab" => (&[VK_CONTROL], VIRTUAL_KEY(0x54)),
+        "close_tab" => (&[VK_CONTROL], VIRTUAL_KEY(0x57)),
+        "reopen_tab" => (&[VK_CONTROL, VK_SHIFT], VIRTUAL_KEY(0x54)),
+        "address_bar" => (&[VK_CONTROL], VIRTUAL_KEY(0x4C)),
+        "refresh" => (&[VK_CONTROL], VIRTUAL_KEY(0x52)),
+        "back" => (&[VK_MENU], VK_LEFT),
+        "forward" => (&[VK_MENU], VK_RIGHT),
+        "escape" => (&[], VK_ESCAPE),
+        _ => return Err("That keyboard shortcut is not allowed".into()),
+    };
+
+    let keyboard_input = |key: VIRTUAL_KEY, key_up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: key,
+                dwFlags: if key_up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
+                ..Default::default()
+            },
+        },
+    };
+    let mut inputs = Vec::with_capacity(modifiers.len() * 2 + 2);
+    inputs.extend(modifiers.iter().map(|key| keyboard_input(*key, false)));
+    inputs.push(keyboard_input(key, false));
+    inputs.push(keyboard_input(key, true));
+    inputs.extend(modifiers.iter().rev().map(|key| keyboard_input(*key, true)));
+    let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        return Err("Windows did not accept the keyboard shortcut".into());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn send_shortcut(_shortcut: &str) -> Result<(), String> {
+    Err("Keyboard shortcuts are currently configured for Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+fn send_text_input(text: &str) -> Result<(), String> {
+    use std::mem::size_of;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, KEYEVENTF_UNICODE,
+        VIRTUAL_KEY, VK_RETURN, VK_TAB,
+    };
+
+    let virtual_key_input = |key: VIRTUAL_KEY, key_up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: key,
+                dwFlags: if key_up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
+                ..Default::default()
+            },
+        },
+    };
+    let unicode_input = |unit: u16, key_up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wScan: unit,
+                dwFlags: if key_up {
+                    KEYEVENTF_UNICODE | KEYEVENTF_KEYUP
+                } else {
+                    KEYEVENTF_UNICODE
+                },
+                ..Default::default()
+            },
+        },
+    };
+
+    let mut inputs = Vec::with_capacity(text.len().saturating_mul(2));
+    let mut previous_was_carriage_return = false;
+    for character in text.chars() {
+        if character == '\n' && previous_was_carriage_return {
+            previous_was_carriage_return = false;
+            continue;
+        }
+        previous_was_carriage_return = character == '\r';
+        let special_key = match character {
+            '\n' | '\r' => Some(VK_RETURN),
+            '\t' => Some(VK_TAB),
+            _ => None,
+        };
+        if let Some(key) = special_key {
+            inputs.push(virtual_key_input(key, false));
+            inputs.push(virtual_key_input(key, true));
+            continue;
+        }
+        let mut encoded = [0_u16; 2];
+        for unit in character.encode_utf16(&mut encoded) {
+            inputs.push(unicode_input(*unit, false));
+            inputs.push(unicode_input(*unit, true));
+        }
+    }
+
+    for chunk in inputs.chunks(256) {
+        let sent = unsafe { SendInput(chunk, size_of::<INPUT>() as i32) };
+        if sent != chunk.len() as u32 {
+            return Err("Windows did not accept all of the typed text".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn send_text_input(_text: &str) -> Result<(), String> {
+    Err("Text input is currently configured for Windows".into())
+}
+
+#[cfg(target_os = "windows")]
+fn send_keyboard_key(key: &str) -> Result<(), String> {
+    use std::mem::size_of;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, VIRTUAL_KEY,
+        VK_BACK, VK_ESCAPE, VK_RETURN, VK_TAB,
+    };
+
+    let key = match key {
+        "backspace" => VK_BACK,
+        "enter" => VK_RETURN,
+        "tab" => VK_TAB,
+        "escape" => VK_ESCAPE,
+        _ => return Err("That keyboard key is not allowed".into()),
+    };
+    let keyboard_input = |key: VIRTUAL_KEY, key_up: bool| INPUT {
+        r#type: INPUT_KEYBOARD,
+        Anonymous: INPUT_0 {
+            ki: KEYBDINPUT {
+                wVk: key,
+                dwFlags: if key_up {
+                    KEYEVENTF_KEYUP
+                } else {
+                    Default::default()
+                },
+                ..Default::default()
+            },
+        },
+    };
+    let inputs = [keyboard_input(key, false), keyboard_input(key, true)];
+    let sent = unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
+    if sent != inputs.len() as u32 {
+        return Err("Windows did not accept the keyboard key".into());
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn send_keyboard_key(_key: &str) -> Result<(), String> {
+    Err("Keyboard input is currently configured for Windows".into())
 }
 
 fn action_level(payload: &ActionRequest) -> Result<u32, String> {
@@ -957,7 +1344,8 @@ fn respond_bytes(request: Request, status: u16, content_type: &str, body: Vec<u8
 
 #[cfg(test)]
 mod phone_mode_tests {
-    use super::{bearer_token_matches, cookie_token_matches};
+    use super::{action_website, bearer_token_matches, cookie_token_matches, ActionRequest};
+    use serde_json::json;
 
     const TOKEN: &str = "phone-session-token";
 
@@ -982,5 +1370,32 @@ mod phone_mode_tests {
             "other_cookie=phone-session-token",
             TOKEN
         ));
+    }
+
+    #[test]
+    fn normalizes_safe_temporary_websites() {
+        let payload = ActionRequest {
+            action_type: "open_website".into(),
+            value: Some(json!("example.com/notes")),
+        };
+        assert_eq!(
+            action_website(&payload).expect("website should be accepted"),
+            "https://example.com/notes"
+        );
+    }
+
+    #[test]
+    fn rejects_non_web_and_credentialed_addresses() {
+        for address in [
+            "file:///C:/Windows",
+            "javascript:alert(1)",
+            "https://user:pass@example.com",
+        ] {
+            let payload = ActionRequest {
+                action_type: "open_website".into(),
+                value: Some(json!(address)),
+            };
+            assert!(action_website(&payload).is_err());
+        }
     }
 }

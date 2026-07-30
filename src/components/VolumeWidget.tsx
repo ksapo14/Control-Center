@@ -183,18 +183,18 @@ export function VolumeWidget() {
           <div>
             <p className="mb-1.5 font-mono text-[9px] font-semibold uppercase tracking-[0.12em] text-stone-600">Media</p>
             <div className="flex items-center gap-1.5">
-              <TactileButton aria-label="Previous track" title="Previous track" disabled={mediaBusy !== null} onClick={() => void controlMedia("previous")} data-control-action="media-previous" className="grid size-9 place-items-center">
+              <TactileButton aria-label="Previous track" title="Previous track" disabled={mediaBusy !== null} onClick={() => void controlMedia("previous")} data-speech-id="media:previous" data-speech-label="Previous media track" data-speech-phrase="previous media|previous track" data-control-action="media-previous" className="grid size-9 place-items-center">
                 <SkipBack size={16} strokeWidth={1.8} />
               </TactileButton>
-              <TactileButton aria-label="Play or pause media" title="Play or pause" disabled={mediaBusy !== null} onClick={() => void controlMedia("play_pause")} data-control-action="media-play-pause" className="grid size-9 place-items-center">
+              <TactileButton aria-label="Play or pause media" title="Play or pause" disabled={mediaBusy !== null} onClick={() => void controlMedia("play_pause")} data-speech-id="media:toggle" data-speech-label="Play or pause media" data-speech-phrase="toggle media|play pause media" data-control-action="media-play-pause" className="grid size-9 place-items-center">
                 <Play size={16} strokeWidth={1.8} />
               </TactileButton>
-              <TactileButton aria-label="Next track" title="Next track" disabled={mediaBusy !== null} onClick={() => void controlMedia("next")} data-control-action="media-next" className="grid size-9 place-items-center">
+              <TactileButton aria-label="Next track" title="Next track" disabled={mediaBusy !== null} onClick={() => void controlMedia("next")} data-speech-id="media:next" data-speech-label="Next media track" data-speech-phrase="next media|next track" data-control-action="media-next" className="grid size-9 place-items-center">
                 <SkipForward size={16} strokeWidth={1.8} />
               </TactileButton>
             </div>
           </div>
-          <TactileButton aria-label="Mute system volume" onClick={() => changeVolume(0)} className="grid size-9 place-items-center">
+          <TactileButton aria-label="Mute system volume" onClick={() => changeVolume(0)} data-speech-id="volume:mute" data-speech-label="Mute system volume" data-speech-phrase="mute computer|mute volume" className="grid size-9 place-items-center">
             <VolumeGlyph level={volume} />
           </TactileButton>
         </div>

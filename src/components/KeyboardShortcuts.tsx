@@ -1,6 +1,13 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { CircleAlert, Keyboard, ListChecks, Pencil, Power, RotateCcw, X, Zap } from "lucide-react";
+import { CircleAlert, Keyboard, ListChecks, Mic, Pencil, Power, RotateCcw, X, Zap } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  buildSpeechCommandRegistry,
+  collectRenderedSpeechCommands,
+  speechCommandReference,
+  type SpeechCommandReference,
+} from "../lib/speechCommands";
+import { useControlCenter } from "./ControlCenter";
 import { TactileButton } from "./TactileButton";
 
 type ShortcutEntry = {
@@ -111,10 +118,12 @@ function collectShortcutEntries(overrides: ShortcutOverrides): ShortcutEntry[] {
  * @remarks Side effects: installs a global key listener while enabled and programmatically activates mapped buttons.
  */
 export function KeyboardShortcutControls() {
+  const { appGroups, automationRules } = useControlCenter();
   // --- Mode and Dialog State ---
   const [enabled, setEnabled] = useState(false);
   const [open, setOpen] = useState(false);
   const [shortcuts, setShortcuts] = useState<ShortcutEntry[]>([]);
+  const [voiceShortcuts, setVoiceShortcuts] = useState<SpeechCommandReference[]>([]);
   const [overrides, setOverrides] = useState<ShortcutOverrides>(initialShortcutOverrides);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [captureMessage, setCaptureMessage] = useState("");
@@ -129,6 +138,9 @@ export function KeyboardShortcutControls() {
    */
   const showDialog = () => {
     setShortcuts(collectShortcutEntries(overrides));
+    setVoiceShortcuts(speechCommandReference(
+      buildSpeechCommandRegistry(collectRenderedSpeechCommands(), automationRules, appGroups),
+    ));
     setOpen(true);
   };
 
@@ -274,27 +286,27 @@ export function KeyboardShortcutControls() {
       <TactileButton
         onClick={() => setEnabled((current) => !current)}
         selected={enabled}
-        className="h-11 px-3"
+        className="grid size-11 place-items-center p-0"
         aria-pressed={enabled}
         aria-label={enabled ? "Disable shortcut mode" : "Enable shortcut mode"}
         title={enabled ? "Shortcut mode enabled" : "Shortcut mode disabled"}
       >
-        <span className="flex items-center gap-2">
+        <span>
           <Keyboard size={17} className={enabled ? "text-signal-300" : "text-stone-500"} />
-          <span className={`hidden text-[10px] font-semibold uppercase tracking-[0.08em] xl:inline ${enabled ? "text-signal-200" : "text-stone-500"}`}>
-            {enabled ? "Keys on" : "Keys off"}
-          </span>
-          <span className={`size-1.5 rounded-full ${enabled ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" : "bg-stone-700"}`} />
+          <span className={`absolute bottom-2 right-2 size-1.5 rounded-full ${enabled ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]" : "bg-stone-700"}`} />
         </span>
       </TactileButton>
 
       <TactileButton
         ref={triggerRef}
         onClick={showDialog}
-        className="h-11 px-3"
+        className="grid size-11 place-items-center p-0"
         aria-haspopup="dialog"
-        aria-label="View keyboard shortcuts"
-        title="Keyboard shortcuts"
+        aria-label="View keyboard and voice shortcuts"
+        data-speech-id="control:keyboard-shortcuts"
+        data-speech-label="Open keyboard shortcuts"
+        data-speech-phrase="keyboard shortcuts"
+        title="Keyboard and voice shortcuts"
       >
         <ListChecks size={17} className="text-signal-300" />
       </TactileButton>
@@ -328,7 +340,7 @@ export function KeyboardShortcutControls() {
                   <div className="min-w-0">
                     <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-signal-400">Command reference</p>
                     <h2 id="keyboard-shortcuts-title" className="mt-1 truncate text-xl font-semibold tracking-[-0.025em] text-stone-100">
-                      Keyboard shortcuts
+                      Keyboard and voice shortcuts
                     </h2>
                   </div>
                 </div>
@@ -400,6 +412,35 @@ export function KeyboardShortcutControls() {
                     </section>
                   ))}
                 </div>
+
+                <section className="mt-7" aria-labelledby="voice-shortcuts-title">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5">
+                      <span className="grid size-8 place-items-center rounded-[9px] border border-emerald-900/40 bg-emerald-950/20 text-emerald-300">
+                        <Mic size={15} />
+                      </span>
+                      <div>
+                        <h3 id="voice-shortcuts-title" className="text-sm font-semibold text-stone-200">Voice shortcuts</h3>
+                        <p className="mt-0.5 text-[10px] text-stone-600">Enable Speech Mode, then say any phrase shown below.</p>
+                      </div>
+                    </div>
+                    <span className="font-mono text-[9px] uppercase tracking-[0.12em] text-stone-700">{voiceShortcuts.length} actions</span>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {voiceShortcuts.map((shortcut) => (
+                      <article key={shortcut.id} className="rounded-[12px] border border-black/70 border-t-white/[0.06] bg-black/20 px-4 py-3.5 shadow-well">
+                        <p className="text-xs font-semibold text-stone-300">{shortcut.label}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {shortcut.phrases.map((phrase) => (
+                            <span key={phrase} className="rounded-full border border-emerald-900/35 bg-emerald-950/20 px-2 py-1 font-mono text-[9px] text-emerald-200/80">
+                              Say “{phrase}”
+                            </span>
+                          ))}
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </section>
 
                 <div className="mt-5 flex items-start gap-2.5 rounded-[12px] border border-signal-950 bg-signal-950/15 px-3.5 py-3 text-xs leading-relaxed text-stone-500">
                   <CircleAlert size={15} className="mt-0.5 shrink-0 text-signal-500" />

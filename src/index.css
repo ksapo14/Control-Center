@@ -108,6 +108,57 @@ input {
   color-scheme: dark;
 }
 
+/* Shared delayed feedback for native work that outlasts a normal click. */
+.processing-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  display: grid;
+  place-items: center;
+  background: rgb(3 4 3 / 0.32);
+  backdrop-filter: blur(7px) saturate(0.86);
+  -webkit-backdrop-filter: blur(7px) saturate(0.86);
+  cursor: wait;
+}
+
+.processing-indicator {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 11px;
+  border: 1px solid rgb(255 255 255 / 0.09);
+  border-top-color: rgb(255 255 255 / 0.16);
+  border-radius: 12px;
+  background: rgb(var(--graphite-900) / 0.94);
+  padding: 0 16px;
+  color: rgb(214 211 209);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 18px 48px rgb(0 0 0 / 0.38);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.processing-spinner {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border: 2px solid rgb(255 255 255 / 0.12);
+  border-top-color: rgb(var(--signal-300));
+  border-radius: 50%;
+  animation: processing-spin 720ms linear infinite;
+}
+
+@keyframes processing-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .processing-spinner {
+    animation: none;
+    border-color: rgb(var(--signal-300) / 0.72);
+  }
+}
+
 .plan-title-input {
   border: 0;
   outline: 0;
@@ -316,6 +367,343 @@ button {
     linear-gradient(145deg, rgb(var(--panel-tint)) 0%, rgb(var(--graphite-800)) 58%, rgb(var(--graphite-900)) 100%);
 }
 
+.finance-panel {
+  background:
+    radial-gradient(circle at 8% 0%, rgb(255 255 255 / 0.035), transparent 28%),
+    linear-gradient(145deg, rgb(var(--panel-tint)) 0%, rgb(var(--graphite-800)) 58%, rgb(var(--graphite-900)) 100%);
+}
+
+.finance-money-input {
+  position: relative;
+}
+
+.finance-money-input > span {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  z-index: 1;
+  color: #57534e;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 10px;
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.finance-money-input input {
+  padding-left: 19px;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-search-field {
+  display: flex;
+  height: 36px;
+  min-width: min(230px, 100%);
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgb(255 255 255 / 0.07);
+  border-radius: 8px;
+  background: rgb(0 0 0 / 0.18);
+  padding: 0 9px;
+  color: #57534e;
+}
+
+.finance-search-field:focus-within {
+  border-color: rgb(var(--signal-400) / 0.42);
+  color: rgb(var(--signal-300));
+}
+
+.finance-search-field input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #d6d3d1;
+  font-size: 10px;
+}
+
+.finance-search-field input::placeholder {
+  color: #57534e;
+}
+
+.finance-filter {
+  width: 100%;
+  height: 36px;
+  border: 1px solid rgb(255 255 255 / 0.07);
+  border-radius: 8px;
+  outline: 0;
+  background: rgb(0 0 0 / 0.18);
+  color: #a8a29e;
+  padding: 0 28px 0 9px;
+  font-size: 10px;
+}
+
+.finance-filter:focus {
+  border-color: rgb(var(--signal-400) / 0.42);
+}
+
+.finance-filter option {
+  background: #101210;
+  color: #d6d3d1;
+}
+
+.finance-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.06);
+  border-radius: 11px;
+  background: rgb(0 0 0 / 0.16);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.018), inset 2px 2px 8px rgb(0 0 0 / 0.22);
+}
+
+.finance-summary > div {
+  min-width: 0;
+  padding: 13px 15px;
+}
+
+.finance-summary > div + div {
+  border-left: 1px solid rgb(255 255 255 / 0.055);
+}
+
+.finance-summary span {
+  display: block;
+  margin-bottom: 6px;
+  color: #57534e;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.finance-summary strong {
+  display: block;
+  overflow: hidden;
+  color: #e7e5e4;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: clamp(15px, 1.8vw, 21px);
+  font-weight: 550;
+  letter-spacing: -0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-analytics-panel {
+  min-height: 216px;
+  border: 1px solid rgb(255 255 255 / 0.055);
+  border-radius: 11px;
+  background: rgb(0 0 0 / 0.14);
+  padding: 13px;
+  box-shadow: inset 2px 2px 8px rgb(0 0 0 / 0.2);
+}
+
+.finance-segmented {
+  display: inline-flex;
+  border: 1px solid rgb(255 255 255 / 0.06);
+  border-radius: 7px;
+  background: rgb(0 0 0 / 0.2);
+  padding: 2px;
+}
+
+.finance-segmented button {
+  min-height: 27px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  padding: 0 8px;
+  color: #57534e;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.finance-segmented button:hover {
+  color: #a8a29e;
+}
+
+.finance-segmented button.active {
+  background: rgb(var(--signal-500) / 0.12);
+  color: rgb(var(--signal-300));
+}
+
+.finance-segmented button:focus-visible {
+  outline: 2px solid rgb(var(--signal-400) / 0.75);
+  outline-offset: 1px;
+}
+
+.finance-chart {
+  position: relative;
+  display: grid;
+  height: 152px;
+  grid-template-columns: repeat(8, minmax(34px, 1fr));
+  gap: clamp(5px, 1vw, 12px);
+  margin-top: 13px;
+}
+
+.finance-chart.finance-chart-month {
+  grid-template-columns: repeat(6, minmax(42px, 1fr));
+}
+
+.finance-chart-column {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  min-width: 0;
+  grid-template-rows: 18px 1fr 17px;
+  gap: 3px;
+}
+
+.finance-chart-value,
+.finance-chart-label {
+  overflow: hidden;
+  color: #57534e;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 7px;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-chart-value {
+  color: #78716c;
+}
+
+.finance-chart-track {
+  display: flex;
+  min-height: 0;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: 1px solid rgb(255 255 255 / 0.065);
+}
+
+.finance-chart-track > span {
+  display: block;
+  width: min(25px, 64%);
+  min-height: 2px;
+  border-radius: 3px 3px 1px 1px;
+  background: linear-gradient(180deg, rgb(var(--signal-300) / 0.92), rgb(var(--signal-500) / 0.52));
+  box-shadow: inset 1px 0 0 rgb(255 255 255 / 0.12);
+  transition: height 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.finance-average-line {
+  position: absolute;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  border-top: 1px dashed rgb(var(--signal-300) / 0.32);
+  pointer-events: none;
+}
+
+.finance-average-line em {
+  position: absolute;
+  right: 0;
+  bottom: 2px;
+  color: rgb(var(--signal-300) / 0.55);
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-size: 7px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.finance-category-list {
+  display: grid;
+  gap: 13px;
+  margin-top: 18px;
+}
+
+.finance-category-list > div > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 5px;
+}
+
+.finance-category-list span,
+.finance-category-list strong {
+  color: #78716c;
+  font-size: 9px;
+}
+
+.finance-category-list strong {
+  color: #a8a29e;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.finance-category-list i {
+  display: block;
+  height: 2px;
+  overflow: hidden;
+  background: rgb(255 255 255 / 0.045);
+}
+
+.finance-category-list i span {
+  display: block;
+  height: 100%;
+  background: rgb(var(--signal-400) / 0.72);
+}
+
+.finance-empty-small {
+  display: grid;
+  min-height: 155px;
+  place-items: center;
+  color: #57534e;
+  font-size: 9px;
+  text-align: center;
+}
+
+.finance-empty-ledger {
+  display: flex;
+  min-height: 126px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #44403c;
+  text-align: center;
+}
+
+.finance-empty-ledger strong {
+  margin-top: 8px;
+  color: #78716c;
+  font-size: 11px;
+}
+
+.finance-empty-ledger span {
+  margin-top: 4px;
+  color: #57534e;
+  font-size: 9px;
+}
+
+@media (max-width: 700px) {
+  .finance-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .finance-summary > div:nth-child(3) {
+    border-top: 1px solid rgb(255 255 255 / 0.055);
+    border-left: 0;
+  }
+
+  .finance-summary > div:nth-child(4) {
+    border-top: 1px solid rgb(255 255 255 / 0.055);
+  }
+
+  .finance-chart {
+    min-width: 430px;
+  }
+
+  .finance-analytics-panel:first-child {
+    overflow-x: auto;
+  }
+}
+
 .schedule-table-input {
   width: 100%;
   height: 36px;
@@ -515,6 +903,1786 @@ button {
 .titlebar-button:active,
 .deck-button:active {
   transform: translateY(1px);
+}
+
+/* Vibe mixer: a compact hardware-console surface over the shared focus backdrop. */
+.vibe-launch-button {
+  position: relative;
+}
+
+.vibe-launch-button > span {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border: 1px solid rgb(0 0 0 / 0.8);
+  border-radius: 50%;
+  background: #323632;
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.12);
+}
+
+.vibe-launch-button.is-live {
+  color: rgb(var(--signal-300));
+}
+
+.vibe-launch-button.is-live > span,
+.vibe-session-state .is-live,
+.vibe-deck-status .is-live {
+  background: rgb(var(--signal-300));
+  box-shadow: 0 0 8px rgb(var(--signal-400) / 0.88), inset 0 1px 1px rgb(255 255 255 / 0.8);
+}
+
+.vibe-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #020302;
+  padding: 12px;
+}
+
+.vibe-overlay-shade {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 50% 47%, rgb(0 0 0 / 0.08), rgb(0 0 0 / 0.46) 72%),
+    rgb(0 0 0 / 0.16);
+  backdrop-filter: blur(4px) saturate(0.9);
+  -webkit-backdrop-filter: blur(4px) saturate(0.9);
+}
+
+.vibe-console {
+  position: relative;
+  display: grid;
+  width: calc(100vw - 12px);
+  height: calc(100dvh - 12px);
+  min-height: 610px;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  overflow: hidden;
+  border: 1px solid rgb(0 0 0 / 0.92);
+  border-top-color: rgb(255 255 255 / 0.18);
+  border-radius: 18px;
+  background:
+    repeating-linear-gradient(92deg, rgb(255 255 255 / 0.012) 0 1px, transparent 1px 5px),
+    radial-gradient(circle at 50% -15%, rgb(255 255 255 / 0.07), transparent 37%),
+    linear-gradient(145deg, #242824 0%, #151815 48%, #0a0c0a 100%);
+  color: #d6d3d1;
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.12),
+    inset 0 -2px 0 rgb(0 0 0 / 0.82),
+    0 34px 100px rgb(0 0 0 / 0.72);
+}
+
+.vibe-console::before,
+.vibe-console::after {
+  position: absolute;
+  z-index: 5;
+  top: 10px;
+  width: 7px;
+  height: 7px;
+  border: 1px solid #050605;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #9da19d, #343834 48%, #0a0b0a 72%);
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.34), 1px 2px 3px rgb(0 0 0 / 0.72);
+  content: "";
+}
+
+.vibe-console::before { left: 10px; }
+.vibe-console::after { right: 10px; }
+
+.vibe-console-header {
+  display: grid;
+  min-height: 58px;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid rgb(0 0 0 / 0.88);
+  padding: 8px 18px;
+  box-shadow: inset 0 -1px 0 rgb(255 255 255 / 0.035), 0 5px 12px rgb(0 0 0 / 0.28);
+}
+
+.vibe-brand-lockup,
+.vibe-header-actions,
+.vibe-session-state,
+.vibe-library-heading > span,
+.vibe-library-heading > button,
+.vibe-mixer-title > span {
+  display: flex;
+  align-items: center;
+}
+
+.vibe-brand-lockup {
+  min-width: 0;
+  gap: 9px;
+}
+
+.vibe-brand-mark {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #050605;
+  border-top-color: rgb(255 255 255 / 0.1);
+  border-radius: 9px;
+  background: linear-gradient(145deg, #242824, #0d0f0d);
+  color: rgb(var(--signal-300));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06), 3px 4px 8px rgb(0 0 0 / 0.45);
+}
+
+.vibe-brand-lockup h2 {
+  margin: 0;
+  color: #f5f5f4;
+  font-family: "Aptos Display", "Segoe UI Variable Display", sans-serif;
+  font-size: 16px;
+  font-weight: 760;
+  letter-spacing: 0.19em;
+  line-height: 1;
+}
+
+.vibe-brand-lockup p {
+  margin: 4px 0 0;
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 650;
+  letter-spacing: 0.14em;
+  line-height: 1;
+}
+
+.vibe-session-state {
+  justify-content: center;
+  gap: 7px;
+  color: #78716c;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.vibe-session-state > span,
+.vibe-deck-status > span {
+  width: 6px;
+  height: 6px;
+  border: 1px solid #030403;
+  border-radius: 50%;
+  background: #3f443f;
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.12);
+}
+
+.vibe-header-actions {
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.vibe-reset-button,
+.vibe-close-button,
+.vibe-cue-button,
+.vibe-monitor-button,
+.vibe-monitor-output button,
+.vibe-library-heading > button,
+.vibe-load-actions > button,
+.vibe-inline-add {
+  border: 1px solid #080908;
+  border-top-color: rgb(255 255 255 / 0.075);
+  background: linear-gradient(145deg, #202320, #101210 70%);
+  color: #78716c;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 2px 3px 6px rgb(0 0 0 / 0.42);
+  transition: color 140ms ease, border-color 140ms ease, transform 140ms ease, box-shadow 140ms ease;
+}
+
+.vibe-reset-button:hover,
+.vibe-close-button:hover,
+.vibe-cue-button:hover:not(:disabled),
+.vibe-monitor-button:hover:not(:disabled),
+.vibe-monitor-output button:hover,
+.vibe-library-heading > button:hover,
+.vibe-load-actions > button:hover,
+.vibe-inline-add:hover {
+  color: #e7e5e4;
+  border-top-color: rgb(255 255 255 / 0.14);
+}
+
+.vibe-reset-button:active,
+.vibe-close-button:active,
+.vibe-cue-button:active:not(:disabled),
+.vibe-monitor-button:active:not(:disabled),
+.vibe-monitor-output button:active,
+.vibe-library-heading > button:active,
+.vibe-load-actions > button:active,
+.vibe-inline-add:active {
+  transform: translateY(1px);
+  box-shadow: inset 2px 2px 5px rgb(0 0 0 / 0.5);
+}
+
+.vibe-reset-button:focus-visible,
+.vibe-close-button:focus-visible,
+.vibe-cue-button:focus-visible,
+.vibe-monitor-button:focus-visible,
+.vibe-monitor-output button:focus-visible,
+.vibe-monitor-output select:focus-visible,
+.vibe-library-heading > button:focus-visible,
+.vibe-load-actions > button:focus-visible,
+.vibe-inline-add:focus-visible,
+.vibe-dropzone:focus-visible,
+.vibe-mode-switch button:focus-visible,
+.vibe-hardware-button:focus-visible,
+.vibe-loop-bank button:focus-visible,
+.vibe-hot-cue-bank button:focus-visible,
+.vibe-memory-bank button:focus-visible,
+.vibe-shortcut-button:focus-visible,
+.vibe-beat-jump-buttons button:focus-visible,
+.vibe-library-tools button:focus-visible {
+  outline: 2px solid rgb(var(--signal-400) / 0.82);
+  outline-offset: 2px;
+}
+
+.vibe-reset-button {
+  display: flex;
+  height: 30px;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  padding: 0 9px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.vibe-close-button {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+}
+
+.vibe-console-body {
+  display: grid;
+  min-height: 0;
+  grid-template-columns: minmax(390px, 1fr) minmax(420px, 0.94fr) minmax(390px, 1fr);
+  align-items: start;
+  gap: 10px;
+  overflow: auto;
+  padding: 10px;
+}
+
+.vibe-deck,
+.vibe-mixer-strip,
+.vibe-library {
+  position: relative;
+  min-width: 0;
+  border: 1px solid rgb(0 0 0 / 0.86);
+  border-top-color: rgb(255 255 255 / 0.085);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 18% 0%, rgb(255 255 255 / 0.035), transparent 25%),
+    linear-gradient(145deg, #1b1e1b, #0e100f 67%, #090a09);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), inset 0 -1px 0 rgb(0 0 0 / 0.75), 4px 5px 10px rgb(0 0 0 / 0.3);
+}
+
+.vibe-deck {
+  display: flex;
+  min-height: max-content;
+  flex-direction: column;
+  padding: 12px;
+}
+
+.vibe-deck-heading {
+  display: flex;
+  height: 38px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.vibe-deck-heading > div:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.vibe-eyebrow,
+.vibe-control-label {
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+}
+
+.vibe-deck-heading h3 {
+  margin: 0;
+  color: rgb(var(--signal-300));
+  font-family: "Aptos Display", "Segoe UI Variable Display", sans-serif;
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 0.9;
+}
+
+.vibe-deck-status {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.vibe-deck-display {
+  position: relative;
+  display: grid;
+  min-height: 112px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(38px, 1fr) auto;
+  gap: 5px 10px;
+  overflow: hidden;
+  border: 1px solid #030403;
+  border-bottom-color: rgb(255 255 255 / 0.035);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgb(var(--signal-500) / 0.035), transparent 32%),
+    #060806;
+  padding: 9px 10px 7px;
+  box-shadow: inset 3px 4px 9px rgb(0 0 0 / 0.68), inset -1px -1px 3px rgb(255 255 255 / 0.022);
+  opacity: var(--display-level, 82%);
+  transition: opacity 120ms ease;
+}
+
+.vibe-deck-readouts {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  color: rgb(var(--signal-300) / 0.72);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+}
+
+.vibe-track-copy {
+  min-width: 0;
+}
+
+.vibe-track-copy strong,
+.vibe-library-track-copy strong {
+  display: block;
+  overflow: hidden;
+  color: #d6d3d1;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-track-copy span,
+.vibe-library-track-copy span {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  letter-spacing: 0.045em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-time-readout {
+  color: rgb(var(--signal-300) / 0.82);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 8px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.vibe-waveform {
+  display: flex;
+  min-width: 0;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 2px;
+  overflow: hidden;
+  opacity: 0.74;
+}
+
+.vibe-waveform i {
+  width: 2px;
+  min-height: 2px;
+  flex: 1 1 0;
+  background: #2c302c;
+  box-shadow: 0 0 1px rgb(0 0 0 / 0.8);
+}
+
+.vibe-waveform i.is-played {
+  background: rgb(var(--signal-400) / 0.9);
+  box-shadow: 0 0 4px rgb(var(--signal-500) / 0.28);
+}
+
+.vibe-seek {
+  width: 100%;
+  height: 12px;
+  grid-column: 1 / -1;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.vibe-seek:disabled { cursor: default; opacity: 0.35; }
+
+.vibe-seek::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(to right, rgb(var(--signal-400)) 0 var(--level), #1e211e var(--level) 100%);
+  box-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.85);
+}
+
+.vibe-seek::-webkit-slider-thumb {
+  width: 9px;
+  height: 9px;
+  margin-top: -3px;
+  appearance: none;
+  border: 1px solid #060706;
+  border-radius: 50%;
+  background: #b8bcb8;
+  box-shadow: 1px 1px 3px rgb(0 0 0 / 0.7);
+}
+
+.vibe-deck-mechanics {
+  display: grid;
+  min-height: 0;
+  flex: 0 0 auto;
+  grid-template-columns: minmax(118px, 0.9fr) minmax(112px, 0.72fr);
+  align-items: center;
+  gap: 10px;
+  padding-top: 10px;
+}
+
+.vibe-platter {
+  position: relative;
+  width: min(100%, 164px);
+  aspect-ratio: 1;
+  justify-self: center;
+  border-radius: 50%;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.vibe-platter[aria-disabled="true"] { cursor: default; opacity: 0.72; }
+.vibe-platter:active { cursor: grabbing; }
+
+.vibe-platter:focus-visible {
+  outline: 2px solid rgb(var(--signal-400) / 0.72);
+  outline-offset: 4px;
+}
+
+.vibe-platter-surface {
+  position: absolute;
+  inset: 0;
+  display: block;
+  border: 2px solid #050605;
+  border-radius: 50%;
+  background:
+    repeating-radial-gradient(circle, transparent 0 3px, rgb(255 255 255 / 0.026) 3.5px 4px),
+    radial-gradient(circle at 42% 38%, #242724 0 14%, #0a0b0a 15% 66%, #272a27 67% 68%, #090a09 69%);
+  box-shadow:
+    inset 0 1px 2px rgb(255 255 255 / 0.13),
+    inset 4px 5px 12px rgb(0 0 0 / 0.72),
+    5px 7px 13px rgb(0 0 0 / 0.52);
+  animation: vibe-spin 3.1s linear infinite paused;
+}
+
+.vibe-platter.is-spinning .vibe-platter-surface { animation-play-state: running; }
+.vibe-platter.is-scrubbing .vibe-platter-surface { box-shadow: inset 0 0 0 2px rgb(var(--signal-400) / 0.24), inset 4px 5px 12px rgb(0 0 0 / 0.72), 5px 7px 13px rgb(0 0 0 / 0.52); }
+
+.vibe-platter-rings {
+  position: absolute;
+  inset: 10%;
+  border: 1px solid rgb(255 255 255 / 0.025);
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 11px rgb(0 0 0 / 0.07), inset 0 0 0 12px rgb(255 255 255 / 0.018);
+}
+
+.vibe-platter-label {
+  position: absolute;
+  inset: 34%;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(0 0 0 / 0.72);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 36% 30%, rgb(255 255 255 / 0.12), transparent 35%),
+    rgb(var(--signal-500) / 0.82);
+  color: #090a09;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 14px;
+  font-weight: 900;
+  box-shadow: inset 0 1px 1px rgb(255 255 255 / 0.26);
+}
+
+.vibe-platter-pin {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border: 1px solid #1d201d;
+  border-radius: 50%;
+  background: #d0d3d0;
+  box-shadow: 1px 1px 2px rgb(0 0 0 / 0.7);
+}
+
+.vibe-platter-hint {
+  position: absolute;
+  z-index: 2;
+  right: 14%;
+  bottom: 9%;
+  left: 14%;
+  color: rgb(var(--signal-300) / 0.52);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.vibe-platter:hover .vibe-platter-hint,
+.vibe-platter:focus-visible .vibe-platter-hint,
+.vibe-platter.is-scrubbing .vibe-platter-hint { opacity: 1; }
+
+@keyframes vibe-spin {
+  to { transform: rotate(360deg); }
+}
+
+.vibe-deck-controls {
+  display: flex;
+  min-width: 0;
+  align-self: stretch;
+  flex-direction: column;
+  justify-content: space-around;
+}
+
+.vibe-deck-sliders {
+  display: grid;
+  gap: 9px;
+}
+
+.vibe-performance-bank {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+  border: 1px solid #050605;
+  border-top-color: rgb(255 255 255 / 0.07);
+  border-radius: 9px;
+  background: linear-gradient(145deg, #171a17, #0a0c0a 76%);
+  padding: 9px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.025), 2px 3px 7px rgb(0 0 0 / 0.3);
+}
+
+.vibe-performance-switches {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.vibe-hardware-button,
+.vibe-loop-bank button,
+.vibe-hot-cue-bank button,
+.vibe-memory-bank button,
+.vibe-shortcut-button,
+.vibe-beat-jump-buttons button,
+.vibe-library-tools button {
+  min-width: 0;
+  border: 1px solid #050605;
+  border-top-color: rgb(255 255 255 / 0.08);
+  border-radius: 5px;
+  background: linear-gradient(145deg, #272b27, #111311 72%);
+  color: #6f6a66;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 780;
+  letter-spacing: 0.055em;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 2px 3px 5px rgb(0 0 0 / 0.42);
+  transition: color 120ms ease, border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.vibe-hardware-button {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 4px 5px;
+}
+
+.vibe-hardware-button:hover:not(:disabled),
+.vibe-loop-bank button:hover:not(:disabled),
+.vibe-hot-cue-bank button:hover:not(:disabled),
+.vibe-memory-bank button:hover:not(:disabled),
+.vibe-shortcut-button:hover,
+.vibe-beat-jump-buttons button:hover:not(:disabled),
+.vibe-library-tools button:hover {
+  color: #d6d3d1;
+}
+
+.vibe-hardware-button:active:not(:disabled),
+.vibe-loop-bank button:active:not(:disabled),
+.vibe-hot-cue-bank button:active:not(:disabled),
+.vibe-memory-bank button:active:not(:disabled),
+.vibe-shortcut-button:active,
+.vibe-beat-jump-buttons button:active:not(:disabled),
+.vibe-library-tools button:active {
+  transform: translateY(1px);
+  box-shadow: inset 2px 2px 5px rgb(0 0 0 / 0.58);
+}
+
+.vibe-hardware-button:disabled,
+.vibe-loop-bank button:disabled,
+.vibe-hot-cue-bank button:disabled,
+.vibe-memory-bank button:disabled,
+.vibe-beat-jump-buttons button:disabled {
+  cursor: not-allowed;
+  opacity: 0.32;
+}
+
+.vibe-hardware-button.is-selected,
+.vibe-loop-bank button.is-selected,
+.vibe-shortcut-button.is-selected,
+.vibe-library-tools button.is-selected {
+  border-color: rgb(var(--signal-400) / 0.46);
+  background: linear-gradient(145deg, rgb(var(--signal-500) / 0.31), #101310 72%);
+  color: rgb(var(--signal-300));
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.48), 0 0 0 1px rgb(var(--signal-400) / 0.07);
+}
+
+.vibe-hardware-button.is-danger.is-selected {
+  border-color: rgb(248 113 113 / 0.5);
+  background: linear-gradient(145deg, rgb(127 29 29 / 0.48), #140c0c 72%);
+  color: #fca5a5;
+}
+
+.vibe-bank-label {
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+.vibe-loop-bank,
+.vibe-hot-cue-bank,
+.vibe-memory-bank {
+  display: grid;
+  gap: 5px;
+}
+
+.vibe-loop-bank > div {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(78px, 1.35fr);
+  gap: 4px;
+}
+
+.vibe-loop-bank button {
+  min-height: 29px;
+  padding: 3px;
+}
+
+.vibe-hot-cue-bank > div {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.vibe-hot-cue-bank button {
+  display: grid;
+  min-height: 40px;
+  place-items: center;
+  gap: 1px;
+  background: linear-gradient(145deg, #232723, #0c0e0c 72%);
+}
+
+.vibe-hot-cue-bank button strong {
+  color: #6b6662;
+  font-size: 8px;
+}
+
+.vibe-hot-cue-bank button small {
+  color: #3f3b38;
+  font-size: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vibe-hot-cue-bank button.is-set {
+  border-color: rgb(var(--signal-400) / 0.58);
+  background: linear-gradient(145deg, rgb(var(--signal-500) / 0.54), #101510 76%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.09), 0 0 7px rgb(var(--signal-500) / 0.14);
+}
+
+.vibe-hot-cue-bank button.is-set strong { color: rgb(var(--signal-200)); }
+.vibe-hot-cue-bank button.is-set small { color: rgb(var(--signal-300) / 0.72); }
+
+.vibe-memory-bank > div {
+  display: grid;
+  grid-template-columns: 29px minmax(90px, 1fr) 29px minmax(70px, auto) minmax(48px, auto);
+  align-items: stretch;
+  gap: 4px;
+}
+
+.vibe-memory-bank button {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 3px 6px;
+}
+
+.vibe-memory-bank output {
+  display: grid;
+  min-width: 0;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #030403;
+  border-radius: 4px;
+  background: #060806;
+  color: rgb(var(--signal-300) / 0.7);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.68);
+}
+
+.vibe-shortcut-button {
+  display: flex;
+  width: 100%;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.vibe-shortcut-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 7px;
+  border: 1px solid #050605;
+  border-radius: 7px;
+  background: #090b09;
+  padding: 8px;
+  box-shadow: inset 2px 3px 6px rgb(0 0 0 / 0.55);
+}
+
+.vibe-beat-jump-buttons {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 5px;
+}
+
+.vibe-beat-jump-buttons button {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.vibe-slider-control {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.vibe-slider-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.vibe-slider-meta output {
+  overflow: hidden;
+  color: #78716c;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-slider-control.is-accent .vibe-slider-meta output { color: rgb(var(--signal-300) / 0.86); }
+
+.vibe-slider-well {
+  display: flex;
+  height: 27px;
+  align-items: center;
+  border: 1px solid #050605;
+  border-radius: 5px;
+  background: #090a09;
+  padding: 0 7px;
+  box-shadow: inset 3px 3px 5px rgb(0 0 0 / 0.78), inset -1px -1px 1px rgb(255 255 255 / 0.025);
+}
+
+.vibe-slider-well input {
+  width: 100%;
+  height: 25px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.vibe-slider-well input::-webkit-slider-runnable-track {
+  height: 5px;
+  border: 1px solid #030403;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgb(var(--signal-500) / 0.78) 0 var(--level), #151815 var(--level) 100%);
+  box-shadow: inset 2px 2px 3px rgb(0 0 0 / 0.82);
+}
+
+.vibe-slider-well input::-webkit-slider-thumb {
+  width: 13px;
+  height: 21px;
+  margin-top: -9px;
+  appearance: none;
+  border: 1px solid #050605;
+  border-radius: 3px;
+  background: repeating-linear-gradient(90deg, transparent 0 3px, rgb(255 255 255 / 0.1) 3px 4px), linear-gradient(145deg, #666b66, #1b1e1b 74%);
+  box-shadow: inset 1px 1px 1px rgb(255 255 255 / 0.25), inset -2px -2px 2px rgb(0 0 0 / 0.62), 2px 3px 5px rgb(0 0 0 / 0.66);
+}
+
+.vibe-slider-control.is-accent .vibe-slider-well { box-shadow: inset 3px 3px 5px rgb(0 0 0 / 0.78), 0 0 0 1px rgb(var(--signal-400) / 0.12); }
+.vibe-slider-well:focus-within { outline: 2px solid rgb(var(--signal-400) / 0.58); outline-offset: 2px; }
+.vibe-slider-well input:focus-visible { outline: none; }
+
+.vibe-transport {
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) auto 24px;
+  align-items: center;
+  gap: 7px;
+}
+
+.vibe-deck-utility-buttons {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.vibe-cue-button,
+.vibe-monitor-button {
+  display: flex;
+  min-width: 0;
+  height: 31px;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border-radius: 6px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.vibe-cue-button:disabled,
+.vibe-monitor-button:disabled { cursor: not-allowed; opacity: 0.34; }
+
+.vibe-monitor-button.is-selected {
+  border-color: rgb(var(--signal-400) / 0.46);
+  background: linear-gradient(145deg, rgb(var(--signal-500) / 0.34), #101310 72%);
+  color: rgb(var(--signal-300));
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.5), 0 0 0 1px rgb(var(--signal-400) / 0.08);
+}
+
+.vibe-play-button {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.vibe-vu {
+  display: flex;
+  height: 50px;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 700;
+}
+
+.vibe-vu-track {
+  position: relative;
+  width: 10px;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+  border: 1px solid #030403;
+  border-radius: 2px;
+  background: #080908;
+  box-shadow: inset 1px 1px 3px rgb(0 0 0 / 0.78);
+}
+
+.vibe-vu-fill {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  left: 1px;
+  min-height: 1px;
+  background: linear-gradient(to top, rgb(var(--signal-500)), rgb(var(--signal-300)) 78%, #f87171 90%);
+  box-shadow: 0 0 5px rgb(var(--signal-400) / 0.46);
+  transition: height 55ms linear;
+}
+
+.vibe-vu-track i {
+  position: relative;
+  z-index: 1;
+  display: block;
+  height: 12.5%;
+  border-top: 1px solid rgb(0 0 0 / 0.7);
+}
+
+.vibe-mixer-strip {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  max-height: none;
+  flex-direction: column;
+  padding: 11px 10px 10px;
+}
+
+.vibe-mixer-title {
+  display: flex;
+  height: 26px;
+  align-items: flex-start;
+  justify-content: space-between;
+  color: #78716c;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.vibe-mixer-title > span { gap: 5px; }
+.vibe-mixer-title i { color: #44403c; font-style: normal; font-size: 6px; }
+
+.vibe-channel-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vibe-mixer-channel {
+  min-width: 0;
+  border: 1px solid #050605;
+  border-top-color: rgb(255 255 255 / 0.075);
+  border-radius: 8px;
+  background:
+    linear-gradient(90deg, rgb(var(--signal-500) / 0.025), transparent 45%),
+    #0b0d0b;
+  padding: 8px;
+  box-shadow: inset 2px 3px 7px rgb(0 0 0 / 0.43), 2px 3px 6px rgb(0 0 0 / 0.25);
+}
+
+.vibe-mixer-channel > header {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 5px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.04);
+  padding: 0 1px 7px;
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 760;
+  letter-spacing: 0.09em;
+}
+
+.vibe-mixer-channel > header strong {
+  color: rgb(var(--signal-300));
+  font-family: "Aptos Display", "Segoe UI Variable Display", sans-serif;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.vibe-mixer-channel > header small {
+  overflow: hidden;
+  color: #44403c;
+  font-size: 5px;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-channel-signal-path {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 66px;
+  gap: 7px;
+  padding-top: 8px;
+}
+
+.vibe-channel-eq-stack {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+}
+
+.vibe-channel-output-stage {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 7px;
+}
+
+.vibe-channel-cue {
+  display: grid;
+  min-height: 42px;
+  grid-template-columns: auto auto;
+  place-content: center;
+  align-items: center;
+  gap: 2px 4px;
+  border: 1px solid #050605;
+  border-top-color: rgb(255 255 255 / 0.1);
+  border-radius: 6px;
+  background: linear-gradient(145deg, #292d29, #111311 72%);
+  color: #77716d;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.045), 2px 3px 5px rgb(0 0 0 / 0.5);
+}
+
+.vibe-channel-cue small {
+  grid-column: 1 / -1;
+  color: #48433f;
+  font-size: 5px;
+  letter-spacing: 0.11em;
+}
+
+.vibe-channel-cue:hover:not(:disabled) { color: #d6d3d1; }
+
+.vibe-channel-cue:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: inset 2px 2px 5px rgb(0 0 0 / 0.58);
+}
+
+.vibe-channel-cue.is-selected {
+  border-color: rgb(var(--signal-400) / 0.5);
+  background: linear-gradient(145deg, rgb(var(--signal-500) / 0.36), #101310 72%);
+  color: rgb(var(--signal-300));
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.46), 0 0 0 1px rgb(var(--signal-400) / 0.08);
+}
+
+.vibe-channel-cue.is-selected small { color: rgb(var(--signal-300) / 0.66); }
+.vibe-channel-cue:disabled { cursor: not-allowed; opacity: 0.34; }
+.vibe-channel-cue:focus-visible { outline: 2px solid rgb(var(--signal-400) / 0.82); outline-offset: 2px; }
+
+.vibe-channel-fader-row {
+  display: grid;
+  min-height: 203px;
+  grid-template-columns: minmax(0, 1fr) 13px;
+  align-items: start;
+  justify-content: center;
+  gap: 4px;
+}
+
+.vibe-channel-volume {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vibe-channel-volume > .vibe-control-label {
+  min-height: 17px;
+  font-size: 5px;
+  letter-spacing: 0.07em;
+  text-align: center;
+}
+
+.vibe-channel-volume-well {
+  position: relative;
+  width: 42px;
+  height: 154px;
+  overflow: hidden;
+  border: 1px solid #030403;
+  border-radius: 5px;
+  background: #070907;
+  box-shadow: inset 3px 3px 7px rgb(0 0 0 / 0.82), inset -1px -1px 2px rgb(255 255 255 / 0.025);
+}
+
+.vibe-channel-volume-well input {
+  position: absolute;
+  z-index: 2;
+  top: 61px;
+  left: -49px;
+  width: 140px;
+  height: 30px;
+  margin: 0;
+  transform: rotate(-90deg);
+  appearance: none;
+  background: transparent;
+  cursor: ns-resize;
+}
+
+.vibe-channel-volume-well input::-webkit-slider-runnable-track {
+  height: 6px;
+  border: 1px solid #020302;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgb(var(--signal-500) / 0.78) 0 var(--channel-level), #171a17 var(--channel-level) 100%);
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.82);
+}
+
+.vibe-channel-volume-well input::-webkit-slider-thumb {
+  width: 20px;
+  height: 28px;
+  margin-top: -12px;
+  appearance: none;
+  border: 1px solid #040504;
+  border-radius: 3px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 4px, rgb(255 255 255 / 0.1) 4px 5px),
+    linear-gradient(145deg, #696e69, #1b1e1b 73%);
+  box-shadow: inset 1px 1px 1px rgb(255 255 255 / 0.24), inset -2px -2px 2px rgb(0 0 0 / 0.62), 2px 3px 5px rgb(0 0 0 / 0.68);
+}
+
+.vibe-channel-volume-well input:focus-visible { outline: none; }
+.vibe-channel-volume-well:focus-within { outline: 2px solid rgb(var(--signal-400) / 0.58); outline-offset: 2px; }
+
+.vibe-channel-volume-scale {
+  position: absolute;
+  top: 9px;
+  right: 3px;
+  bottom: 9px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.vibe-channel-volume-scale i { width: 4px; height: 1px; background: #34312e; }
+.vibe-channel-volume-scale i:nth-child(5) { width: 7px; background: rgb(var(--signal-400) / 0.52); }
+.vibe-channel-volume output { color: rgb(var(--signal-300) / 0.72); }
+
+.vibe-channel-fader-row .vibe-vu {
+  height: 182px;
+  padding-top: 18px;
+}
+
+.vibe-master-effects {
+  margin-top: 9px;
+  border-top: 1px solid rgb(255 255 255 / 0.045);
+  padding-top: 8px;
+}
+
+.vibe-master-effects-title {
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 760;
+  letter-spacing: 0.12em;
+}
+
+.vibe-mixer-sliders {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 6px;
+  padding: 7px 0 9px;
+}
+
+.vibe-mode-switch {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  overflow: hidden;
+  border: 1px solid #050605;
+  border-radius: 7px;
+  background: #090a09;
+  box-shadow: inset 2px 2px 5px rgb(0 0 0 / 0.72);
+  padding: 3px;
+}
+
+.vibe-mode-switch button {
+  height: 25px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #4f4a46;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 750;
+  letter-spacing: 0.09em;
+}
+
+.vibe-mode-switch button.is-selected {
+  border: 1px solid rgb(255 255 255 / 0.06);
+  background: linear-gradient(145deg, #232623, #111311);
+  color: rgb(var(--signal-300));
+  box-shadow: 2px 2px 4px rgb(0 0 0 / 0.48);
+}
+
+.vibe-crossfader-block {
+  margin-top: 10px;
+  border-top: 1px solid rgb(255 255 255 / 0.045);
+  padding: 12px 4px 1px;
+}
+
+.vibe-crossfader-copy {
+  display: grid;
+  grid-template-columns: 20px 1fr 20px;
+  align-items: center;
+  color: rgb(var(--signal-300));
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 8px;
+  font-weight: 850;
+  text-align: center;
+}
+
+.vibe-crossfader-copy label {
+  color: #57534e;
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.vibe-crossfader {
+  width: 100%;
+  height: 35px;
+  margin: 3px 0 0;
+  appearance: none;
+  background: transparent;
+  cursor: ew-resize;
+}
+
+.vibe-crossfader::-webkit-slider-runnable-track {
+  height: 9px;
+  border: 1px solid #030403;
+  border-radius: 3px;
+  background:
+    linear-gradient(to right, rgb(var(--signal-500) / 0.25), transparent 35% 65%, rgb(var(--signal-500) / 0.25)),
+    #080908;
+  box-shadow: inset 3px 3px 5px rgb(0 0 0 / 0.8), inset -1px -1px 2px rgb(255 255 255 / 0.025);
+}
+
+.vibe-crossfader::-webkit-slider-thumb {
+  width: 22px;
+  height: 30px;
+  margin-top: -11px;
+  appearance: none;
+  border: 1px solid #050605;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 4px, rgb(255 255 255 / 0.08) 4px 5px),
+    linear-gradient(145deg, #555a55, #171a17 72%);
+  box-shadow: inset 1px 1px 1px rgb(255 255 255 / 0.24), inset -2px -2px 3px rgb(0 0 0 / 0.62), 3px 4px 7px rgb(0 0 0 / 0.68);
+}
+
+.vibe-crossfader:focus-visible { outline: none; }
+.vibe-crossfader:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgb(var(--signal-400) / 0.4), 3px 4px 7px rgb(0 0 0 / 0.68); }
+
+.vibe-crossfader-scale {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 10px;
+}
+
+.vibe-crossfader-scale i { width: 1px; height: 4px; background: #4f4a46; }
+.vibe-crossfader-scale i:nth-child(6) { height: 7px; background: rgb(var(--signal-400) / 0.72); }
+
+.vibe-monitor-strip {
+  display: grid;
+  min-height: 78px;
+  grid-template-columns: minmax(180px, 0.9fr) auto minmax(300px, 1.35fr) minmax(230px, 1fr);
+  align-items: center;
+  gap: 13px;
+  margin: 0 10px 8px;
+  border: 1px solid rgb(0 0 0 / 0.88);
+  border-top-color: rgb(255 255 255 / 0.08);
+  border-radius: 11px;
+  background:
+    repeating-linear-gradient(92deg, transparent 0 5px, rgb(255 255 255 / 0.008) 5px 6px),
+    linear-gradient(145deg, #171a17, #0a0c0a 72%);
+  padding: 9px 11px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03), inset 3px 4px 8px rgb(0 0 0 / 0.28), 3px 4px 8px rgb(0 0 0 / 0.2);
+}
+
+.vibe-monitor-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+}
+
+.vibe-monitor-identity > div {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+
+.vibe-monitor-identity strong,
+.vibe-monitor-identity span,
+.vibe-monitor-output label {
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.vibe-monitor-identity strong {
+  color: #a8a29e;
+  font-size: 7px;
+  letter-spacing: 0.11em;
+}
+
+.vibe-monitor-identity > div > span {
+  overflow: hidden;
+  color: #57534e;
+  font-size: 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-monitor-identity small {
+  overflow: hidden;
+  color: rgb(var(--signal-300) / 0.72);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-monitor-jack {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #030403;
+  border-radius: 50%;
+  background: radial-gradient(circle, #1c201c 0 48%, #080908 50% 67%, #373b37 69% 72%, #090a09 74%);
+  color: #57534e;
+  box-shadow: inset 3px 3px 5px rgb(0 0 0 / 0.68), 2px 3px 5px rgb(0 0 0 / 0.38);
+}
+
+.vibe-monitor-jack.is-ready { color: rgb(var(--signal-300)); }
+
+.vibe-monitor-pfl-state {
+  display: grid;
+  gap: 4px;
+}
+
+.vibe-monitor-pfl-state span {
+  min-width: 47px;
+  border: 1px solid #050605;
+  border-radius: 4px;
+  background: #0a0b0a;
+  padding: 5px 6px;
+  color: #44403c;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-align: center;
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.6);
+}
+
+.vibe-monitor-pfl-state span.is-selected {
+  border-color: rgb(var(--signal-400) / 0.38);
+  color: rgb(var(--signal-300));
+  background: rgb(var(--signal-500) / 0.16);
+}
+
+.vibe-monitor-faders {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.vibe-monitor-output {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.vibe-monitor-output label {
+  color: #57534e;
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.vibe-monitor-output > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px;
+}
+
+.vibe-monitor-output select {
+  width: 100%;
+  min-width: 0;
+  height: 31px;
+  border: 1px solid #050605;
+  border-radius: 6px;
+  outline: none;
+  background: #090a09;
+  padding: 0 7px;
+  color: #8d8883;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.68);
+}
+
+.vibe-monitor-output button {
+  height: 31px;
+  border-radius: 6px;
+  padding: 0 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+}
+
+.vibe-library {
+  display: flex;
+  min-height: 112px;
+  max-height: 194px;
+  flex-direction: column;
+  margin: 0 10px 8px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #0a0c0a;
+  box-shadow: inset 3px 4px 9px rgb(0 0 0 / 0.68), inset -1px -1px 3px rgb(255 255 255 / 0.022);
+}
+
+.vibe-library.is-dragging {
+  border-color: rgb(var(--signal-400) / 0.64);
+  box-shadow: inset 0 0 0 1px rgb(var(--signal-400) / 0.26), inset 3px 4px 9px rgb(0 0 0 / 0.68);
+}
+
+.vibe-library-heading {
+  display: flex;
+  height: 35px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgb(255 255 255 / 0.04);
+  padding: 0 9px 0 12px;
+  color: #78716c;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.vibe-library-heading > span { gap: 6px; }
+.vibe-library-heading b { color: rgb(var(--signal-300)); font-size: 7px; }
+
+.vibe-library-tools {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vibe-library-tools button {
+  display: flex;
+  height: 24px;
+  align-items: center;
+  gap: 5px;
+  gap: 5px;
+  border-radius: 6px;
+  padding: 0 8px;
+}
+
+.vibe-library-filter {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.04);
+  background: #080a08;
+  padding: 7px 10px;
+}
+
+.vibe-dropzone {
+  display: flex;
+  width: calc(100% - 12px);
+  height: 63px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 5px 6px;
+  border: 1px dashed rgb(255 255 255 / 0.085);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.012);
+  color: #78716c;
+}
+
+.vibe-dropzone span { color: #a8a29e; font-size: 9px; font-weight: 600; }
+.vibe-dropzone small { color: #44403c; font-family: "Cascadia Code", Consolas, monospace; font-size: 6px; }
+
+.vibe-track-list {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  align-items: stretch;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 6px;
+}
+
+.vibe-library-track {
+  display: grid;
+  min-width: 292px;
+  max-width: 340px;
+  flex: 1 0 292px;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgb(255 255 255 / 0.045);
+  border-radius: 7px;
+  background: linear-gradient(145deg, #151815, #0c0e0c);
+  padding: 6px 6px 6px 8px;
+  box-shadow: 2px 3px 6px rgb(0 0 0 / 0.28);
+}
+
+.vibe-track-index {
+  color: #44403c;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 8px;
+}
+
+.vibe-library-track-copy { min-width: 0; }
+
+.vibe-library-bpm {
+  display: grid;
+  grid-template-columns: auto minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  color: #4f4a46;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.vibe-library-bpm input {
+  width: 100%;
+  height: 10px;
+  margin: 0;
+  accent-color: rgb(var(--signal-500));
+  cursor: ew-resize;
+}
+
+.vibe-library-bpm output { color: rgb(var(--signal-300) / 0.66); }
+
+.vibe-library-empty-filter {
+  display: grid;
+  min-height: 70px;
+  flex: 1;
+  place-items: center;
+  padding: 12px;
+  color: #57534e;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  text-align: center;
+}
+
+.vibe-load-actions {
+  display: flex;
+  gap: 3px;
+}
+
+.vibe-load-actions > button {
+  display: grid;
+  width: 25px;
+  height: 25px;
+  place-items: center;
+  border-radius: 5px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 7px;
+  font-weight: 850;
+}
+
+.vibe-load-actions > button.is-loaded {
+  color: rgb(var(--signal-300));
+  box-shadow: inset 2px 2px 4px rgb(0 0 0 / 0.58), 0 0 5px rgb(var(--signal-500) / 0.14);
+}
+
+.vibe-inline-add {
+  display: flex;
+  min-width: 90px;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-radius: 7px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.vibe-drop-scrim {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(8 10 8 / 0.88);
+  color: rgb(var(--signal-300));
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  backdrop-filter: blur(4px);
+}
+
+.vibe-console-footer {
+  display: grid;
+  min-height: 29px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  border-top: 1px solid rgb(255 255 255 / 0.035);
+  padding: 0 16px;
+  color: #44403c;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 6px;
+  letter-spacing: 0.07em;
+}
+
+.vibe-console-footer p {
+  overflow: hidden;
+  margin: 0;
+  color: #6b6662;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vibe-status-light {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(var(--signal-400) / 0.7);
+  box-shadow: 0 0 5px rgb(var(--signal-400) / 0.42);
+}
+
+@media (max-width: 920px) {
+  .vibe-console {
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  }
+
+  .vibe-console-body {
+    grid-template-columns: 390px 420px 390px;
+    overflow-x: auto;
+  }
+
+  .vibe-library { grid-row: auto; }
+
+  .vibe-monitor-strip {
+    grid-template-columns: minmax(155px, 0.8fr) auto minmax(270px, 1.3fr) minmax(210px, 1fr);
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .vibe-overlay { padding: 0; }
+
+  .vibe-console {
+    width: 100vw;
+    height: 100dvh;
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .vibe-console-header {
+    grid-template-columns: 1fr auto;
+    padding: 8px 11px;
+  }
+
+  .vibe-session-state { display: none; }
+  .vibe-reset-button { width: 30px; justify-content: center; padding: 0; }
+  .vibe-reset-button { font-size: 0; gap: 0; }
+
+  .vibe-console-body {
+    grid-template-columns: 360px 420px 360px;
+    padding: 7px;
+  }
+
+  .vibe-performance-switches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vibe-hot-cue-bank > div { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .vibe-memory-bank > div { grid-template-columns: 29px minmax(80px, 1fr) 29px; }
+  .vibe-memory-bank > div > button:nth-of-type(3),
+  .vibe-memory-bank > div > button:nth-of-type(4) { grid-column: span 1; }
+  .vibe-shortcut-panel { grid-template-columns: 1fr; }
+  .vibe-beat-jump-buttons { grid-column: 1; }
+
+  .vibe-library-heading {
+    height: auto;
+    min-height: 35px;
+    align-items: flex-start;
+    gap: 6px;
+    padding-block: 6px;
+  }
+
+  .vibe-library-tools { flex-wrap: wrap; justify-content: flex-end; }
+
+  .vibe-library {
+    margin: 0 7px 6px;
+  }
+
+  .vibe-monitor-strip {
+    min-width: 0;
+    grid-template-columns: 168px 48px 285px 220px;
+    margin: 0 7px 6px;
+    padding: 8px 9px;
+  }
+
+  .vibe-dropzone {
+    flex-wrap: wrap;
+    align-content: center;
+  }
+
+  .vibe-dropzone small {
+    width: 100%;
+    text-align: center;
+  }
+
+  .vibe-console-footer {
+    padding: 0 10px;
+  }
+
+  .vibe-console-footer > span:last-child { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vibe-platter-surface { animation: none; }
+  .vibe-vu-fill { transition: none; }
 }
 
 .playlist-cover {

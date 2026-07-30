@@ -347,6 +347,7 @@ export function PomodoroTimer() {
           data-shortcut-detail="Toggles the current timer"
           data-shortcut-group="Pomodoro"
           data-shortcut-order="0"
+          data-speech-state={running ? "running" : completed ? "completed" : "paused"}
           data-control-action="pomodoro-toggle"
           title={completed ? "Reset" : running ? "Pause" : "Play"}
           className={`grid place-items-center rounded-full ${focused ? "size-14" : "size-11"}`}

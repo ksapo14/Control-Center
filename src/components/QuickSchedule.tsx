@@ -19,6 +19,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
+import { useProcessingOverlay } from "./LoadingOverlay";
 
 type CalendarStatus = {
   configured: boolean;
@@ -126,6 +127,16 @@ export function QuickSchedule() {
   const dialogRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const processingLabel = busy === "connect"
+    ? "Connecting Google Calendar"
+    : busy === "disconnect"
+      ? "Disconnecting Google Calendar"
+      : busy === "import"
+        ? "Importing Calendar credentials"
+        : busy === "save"
+          ? "Adding Calendar events"
+          : "Checking Calendar connection";
+  useProcessingOverlay(busy !== null, processingLabel);
 
   const showNotice = (message: string, kind: "info" | "error" | "success" = "info") => {
     setNotice(message);
@@ -335,8 +346,10 @@ export function QuickSchedule() {
       <TactileButton
         ref={triggerRef}
         onClick={showDialog}
-        className="h-9 px-2.5 sm:px-3"
+        className="grid size-11 place-items-center p-0"
         aria-haspopup="dialog"
+        aria-label="Open Quick Schedule"
+        title="Quick Schedule"
         data-shortcut-combo="Control+Alt+KeyS"
         data-shortcut-id="control:quick-schedule"
         data-shortcut-label="Open Quick Schedule"
@@ -344,10 +357,7 @@ export function QuickSchedule() {
         data-shortcut-group="Control panel"
         data-shortcut-order="0"
       >
-        <span className="flex items-center gap-2">
-          <CalendarPlus size={15} strokeWidth={1.7} className="text-signal-300" />
-          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-300 sm:inline">Quick schedule</span>
-        </span>
+        <CalendarPlus size={15} strokeWidth={1.7} className="text-signal-300" />
       </TactileButton>
 
       <AnimatePresence>

@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { Bluetooth, Headphones, Radio, Unplug } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
+import { useProcessingOverlay } from "./LoadingOverlay";
 import { TactileButton } from "./TactileButton";
 import { WidgetFrame } from "./WidgetFrame";
 
@@ -124,6 +125,10 @@ export function BluetoothWidget() {
 
   // --- Widget Rendering ---
   const transitioning = connection === "connecting" || connection === "disconnecting";
+  useProcessingOverlay(
+    transitioning,
+    connection === "disconnecting" ? "Disconnecting Bluetooth audio" : "Connecting Bluetooth audio",
+  );
 
   return (
     <WidgetFrame
@@ -153,6 +158,9 @@ export function BluetoothWidget() {
             <TactileButton
               onClick={() => void connect()}
               disabled={transitioning}
+              data-speech-id="bluetooth:connect"
+              data-speech-label="Connect headphones"
+              data-speech-phrase="connect headphones"
               selected={connection === "connected"}
               className="flex h-10 items-center justify-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-[0.09em]"
             >
@@ -162,6 +170,9 @@ export function BluetoothWidget() {
             <TactileButton
               onClick={() => void disconnect()}
               disabled={connection !== "connected"}
+              data-speech-id="bluetooth:disconnect"
+              data-speech-label="Disconnect headphones"
+              data-speech-phrase="disconnect headphones"
               className="flex h-10 items-center justify-center gap-2 px-2 text-[10px] font-semibold uppercase tracking-[0.09em]"
             >
               <Unplug size={14} strokeWidth={1.8} />

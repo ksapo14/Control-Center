@@ -6,7 +6,7 @@ import { isTauriRuntime } from "../lib/runtime";
 const AUDIO_NOISE_FLOOR = 0.02;
 const AUDIO_VISUAL_CEILING = 0.55;
 
-type AudioBands = { bass: number; mids: number; treble: number };
+export type AudioBands = { bass: number; mids: number; treble: number };
 
 function audioMotionLevel(value: number) {
   const normalized = Math.min(1, Math.max(0, (value - AUDIO_NOISE_FLOOR) / (AUDIO_VISUAL_CEILING - AUDIO_NOISE_FLOOR)));
@@ -16,10 +16,11 @@ function audioMotionLevel(value: number) {
 type AudioReactiveFocusBackdropProps = {
   active: boolean;
   completed?: boolean;
+  bandSource?: () => AudioBands | null;
 };
 
 /** Shared, audio-reactive backdrop used by Pomodoro and productivity focus sessions. */
-export function AudioReactiveFocusBackdrop({ active, completed = false }: AudioReactiveFocusBackdropProps) {
+export function AudioReactiveFocusBackdrop({ active, completed = false, bandSource }: AudioReactiveFocusBackdropProps) {
   const reduceMotion = useReducedMotion();
   const rawBass = useMotionValue(0);
   const rawMids = useMotionValue(0);
@@ -35,7 +36,7 @@ export function AudioReactiveFocusBackdrop({ active, completed = false }: AudioR
   const trebleOpacity = useTransform(treble, [0, 1], [0.06, 1]);
 
   useEffect(() => {
-    if (!active || completed || reduceMotion || !isTauriRuntime()) {
+    if (!active || completed || reduceMotion || (!bandSource && !isTauriRuntime())) {
       rawBass.set(0);
       rawMids.set(0);
       rawTreble.set(0);
@@ -48,7 +49,15 @@ export function AudioReactiveFocusBackdrop({ active, completed = false }: AudioR
       if (reading) return;
       reading = true;
       try {
-        const bands = await invoke<AudioBands>("get_system_audio_bands");
+        const bands = bandSource ? bandSource() : await invoke<AudioBands>("get_system_audio_bands");
+        if (!bands) {
+          if (mounted) {
+            rawBass.set(0);
+            rawMids.set(0);
+            rawTreble.set(0);
+          }
+          return;
+        }
         if (mounted) {
           rawBass.set(audioMotionLevel(bands.bass));
           rawMids.set(audioMotionLevel(bands.mids));
@@ -74,7 +83,7 @@ export function AudioReactiveFocusBackdrop({ active, completed = false }: AudioR
       rawMids.set(0);
       rawTreble.set(0);
     };
-  }, [active, completed, rawBass, rawMids, rawTreble, reduceMotion]);
+  }, [active, bandSource, completed, rawBass, rawMids, rawTreble, reduceMotion]);
 
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden bg-black" aria-hidden="true">

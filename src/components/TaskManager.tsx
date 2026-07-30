@@ -23,6 +23,7 @@ import {
 import { PointerEvent as ReactPointerEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
+import { useProcessingOverlay } from "./LoadingOverlay";
 
 type DisplayMonitor = {
   id: string;
@@ -282,6 +283,8 @@ export function TaskManager() {
   const selectedWindow = windows.find((window) => window.handle === selectedHandle) ?? null;
   const hasChanges = layoutSignature(windows) !== baselineRef.current;
   const stagedCloseCount = windows.filter((window) => window.close).length;
+  useProcessingOverlay(loading, "Reading open windows");
+  useProcessingOverlay(saving, "Applying window layout");
 
   useEffect(() => {
     try {
@@ -775,7 +778,7 @@ export function TaskManager() {
       <TactileButton
         ref={triggerRef}
         onClick={showDialog}
-        className="h-11 px-3 sm:px-4"
+        className="grid size-11 place-items-center p-0"
         aria-haspopup="dialog"
         aria-label="Arrange open applications"
         data-shortcut-combo="Control+Alt+KeyO"
@@ -786,12 +789,7 @@ export function TaskManager() {
         data-shortcut-order="1"
         data-control-action="open-apps"
       >
-        <span className="flex items-center gap-2.5">
-          <AppWindow size={18} strokeWidth={1.7} className="text-signal-300" />
-          <span className="hidden text-[11px] font-semibold uppercase tracking-[0.08em] text-stone-300 md:inline">
-            Open apps
-          </span>
-        </span>
+        <AppWindow size={18} strokeWidth={1.7} className="text-signal-300" />
       </TactileButton>
 
       {layoutProfiles.map((profile) => (

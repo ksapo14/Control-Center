@@ -573,8 +573,9 @@ export function ProductivityEnvironment() {
       <button
         type="button"
         onClick={() => session ? setNowOpen(true) : openHub("today")}
-        className="header-control-button relative flex h-9 shrink-0 items-center gap-2 rounded-xl border border-white/[0.07] bg-graphite-800 px-3 text-[11px] font-semibold text-stone-400 shadow-skeuo-raised transition hover:text-stone-100 active:translate-y-px active:shadow-skeuo-pressed"
+        className="header-control-button relative grid size-9 shrink-0 place-items-center rounded-xl border border-white/[0.07] bg-graphite-800 text-stone-400 shadow-skeuo-raised transition hover:text-stone-100 active:translate-y-px active:shadow-skeuo-pressed"
         aria-label={session ? "Open Now mode" : "Open productivity environment"}
+        title={session ? `${Math.floor(remainingSeconds / 60)} minutes remaining` : "Productivity environment"}
         data-shortcut-combo="Control+Alt+KeyE"
         data-shortcut-id="control:environment"
         data-shortcut-label="Open productivity environment"
@@ -582,9 +583,17 @@ export function ProductivityEnvironment() {
         data-shortcut-group="Control Panel"
       >
         {session ? <Timer size={14} className="text-signal-300" /> : <Orbit size={14} />}
-        <span className="hidden xl:inline">{session ? `${Math.floor(remainingSeconds / 60)}m` : "Environment"}</span>
         {attentionItems.length > 0 ? <span className="environment-badge">{Math.min(9, attentionItems.length)}</span> : null}
       </button>
+
+      <div className="hidden" aria-hidden="true">
+        {views.map(({ id, label }) => (
+          <button key={id} type="button" tabIndex={-1} data-speech-id={`environment:view:${id}`} data-speech-label={`Open ${label}`} data-speech-phrase={id === "today" ? "today timeline" : id === "scenes" ? "project scenes" : id === "capture" ? "quick capture" : id === "attention" ? "attention center" : id} onClick={() => openHub(id)} />
+        ))}
+        {data.scenes.map((scene) => (
+          <button key={scene.id} type="button" tabIndex={-1} data-speech-id={`environment:scene:${scene.id}`} data-speech-label={`Start ${scene.name}`} data-speech-phrase={`start ${scene.name}`} onClick={() => void runScene(scene)} />
+        ))}
+      </div>
 
       <AnimatePresence>
         {commandOpen ? (

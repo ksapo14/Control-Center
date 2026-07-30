@@ -5,6 +5,7 @@ import { cn } from "../lib/cn";
 import { errorMessage, isTauriRuntime } from "../lib/runtime";
 import { TactileButton } from "./TactileButton";
 import { WidgetFrame } from "./WidgetFrame";
+import { useProcessingOverlay } from "./LoadingOverlay";
 
 type Playlist = {
   id: string;
@@ -151,6 +152,10 @@ export function SpotifyWidget() {
   const [addingPlaylist, setAddingPlaylist] = useState(false);
   const [playlistTitle, setPlaylistTitle] = useState("");
   const [playlistReference, setPlaylistReference] = useState("");
+  useProcessingOverlay(
+    busy,
+    connection.connected ? "Updating Spotify connection" : "Connecting Spotify",
+  );
 
   useEffect(() => {
     try {
@@ -424,6 +429,9 @@ export function SpotifyWidget() {
                   selected === playlist.id && "border-signal-500/30 bg-signal-500/[0.025]",
                 )}
                 aria-label={`Play ${playlist.title} on Spotify`}
+                data-speech-id={`spotify:playlist:${playlist.id}`}
+                data-speech-label={`Play ${playlist.title} on Spotify`}
+                data-speech-phrase={`play ${playlist.title}`}
               >
                 <span className={cn("playlist-cover relative block aspect-[2/1] overflow-hidden rounded-[9px]", playlist.cover)}>
                   <span className="absolute inset-0 bg-gradient-to-br from-white/[0.055] via-transparent to-[#050605]/65" />
